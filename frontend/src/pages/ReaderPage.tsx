@@ -23,12 +23,38 @@ export default function ReaderPage() {
   const tocRef = useRef<HTMLButtonElement>(null);
   const [chapters, setChapters] = useState<{ id: string; title: string; url: string }[]>([]);
   const [chIdx, setChIdx] = useState(-1);
-  const [failedImages, setFailedImages] = useState<Set<number>>(new Set());
-  const [retryTimestamps, setRetryTimestamps] = useState<Record<number, number>>({});
+
   const [showHeader, setShowHeader] = useState(true);
   const lastScrollTop = useRef(0);
   // Chapter image cache for instant back-navigation
   const chapterCacheRef = useRef<Map<string, { images: string[]; title: string }>>(new Map());
+
+  // SSE stream helper for remaining images
+  async function fetchStream(url: string, onImage: (img: string) => void): Promise<void> {
+    try {
+      const resp = await fetch(url);
+      const reader = resp.body?.getReader();
+      if (!reader) return;
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6);
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.done) return;
+            if (parsed.image) onImage(parsed.image);
+          } catch {}
+        }
+      }
+    } catch {}
+  }
 
   // Fetch chapter images
   useEffect(() => {
@@ -45,8 +71,6 @@ export default function ReaderPage() {
       setTitle(cached.title);
       setLoading(false);
       setError("");
-      setFailedImages(new Set());
-      setRetryTimestamps({});
       requestAnimationFrame(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = 0;
       });
@@ -56,19 +80,34 @@ export default function ReaderPage() {
 
     // Not cached — fetch
     prevImages.current = [];
-    setImages([]); setFailedImages(new Set()); setRetryTimestamps({});
+    setImages([]);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     setLoading(true); setError("");
     api.getChapterImages(site, comicId, chapterId, chapterTitle, chapterUrl)
       .then(r => {
         if (stale) return;
-        chapterCacheRef.current.set(cacheKey, { images: r.images, title: r.title });
-        prevImages.current = r.images;
+        const initialImages = r.first || [];
+        prevImages.current = initialImages;
         prevTitle.current = r.title;
-        setImages(r.images); setTitle(r.title);
+        setImages(initialImages); setTitle(r.title);
+        setLoading(false);
         requestAnimationFrame(() => {
           if (scrollRef.current) scrollRef.current.scrollTop = 0;
         });
+        // Stream remaining images, cache only when stream completes
+        if (r.stream && r.total && r.total > initialImages.length) {
+          const acc = [...initialImages];
+          fetchStream(r.stream, (image) => {
+            acc.push(image);
+            setImages([...acc]);
+          }).then(() => {
+            chapterCacheRef.current.set(cacheKey, { images: acc, title: r.title });
+            prevImages.current = acc;
+          });
+        } else {
+          // No remaining — cache immediately
+          chapterCacheRef.current.set(cacheKey, { images: initialImages, title: r.title });
+        }
       })
       .catch(e => { if (!stale) setError(e.message); })
       .finally(() => { if (!stale) setLoading(false); });
@@ -88,19 +127,14 @@ export default function ReaderPage() {
     if (chapters.length) setChIdx(chapters.findIndex(ch => ch.id === chapterId));
   }, [chapters, chapterId]);
 
-  // Preload next chapter — fetch API + preload first 5 images
+  // Preload next chapter — warm the API cache
   useEffect(() => {
     if (!site || !comicId || images.length === 0 || loading) return;
     const nextId = nextChapterId(1);
     if (!nextId) return;
     const next = chapters.find(ch => ch.id === nextId);
     if (!next) return;
-    api.getChapterImages(site, comicId, next.id, next.title, next.url).then(r => {
-      r.images.slice(0, 5).forEach(url => {
-        const img = new Image();
-        img.src = url;
-      });
-    }).catch(() => {});
+    api.getChapterImages(site, comicId, next.id, next.title, next.url).catch(() => {});
   }, [site, comicId, images, loading, chIdx, chapters]);
 
   function chapterSortId(id: string) {
@@ -203,29 +237,14 @@ export default function ReaderPage() {
         </div>
         <div className="flex flex-col items-center">
           {displayImages.map((url, i) => (
-            failedImages.has(i) ? (
-              <div key={i} className="w-full max-w-[800px] min-h-[160px] flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-800 text-gray-400 rounded-lg my-1">
-                <span className="text-2xl mb-1">🖼️</span>
-                <span className="text-sm">图片加载失败</span>
-                <button className="text-sm text-[#6366f1] mt-2 min-h-[44px] px-4" onClick={() => {
-                  setFailedImages(prev => { const n = new Set(prev); n.delete(i); return n; });
-                  setRetryTimestamps(prev => ({ ...prev, [i]: Date.now() }));
-                }}>重试</button>
-              </div>
-            ) : (
-              <img
-                key={i}
-                src={`${url}${url.includes('?') ? '&' : '?'}_t=${retryTimestamps[i] || 0}`}
-                alt={`Page ${i + 1}`}
-                className="w-full max-w-[800px]"
-                decoding="async"
-                fetchPriority={i < 2 ? "high" : "auto"}
-                referrerPolicy="no-referrer"
-                onError={() => {
-                  setFailedImages(prev => { const n = new Set(prev); n.add(i); return n; });
-                }}
-              />
-            )
+            <img
+              key={i}
+              src={url}
+              alt={`Page ${i + 1}`}
+              className="w-full max-w-[800px]"
+              decoding="async"
+              fetchPriority={i < 2 ? "high" : "auto"}
+            />
           ))}
           {displayImages.length === 0 && !loading && (
             <div className="text-center py-16 text-gray-500">

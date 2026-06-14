@@ -302,26 +302,96 @@ api.get("/comics/:site/:comicId", async (c) => {
   } catch { console.error("Comic detail fetch failed"); return c.json({ error: "服务暂时不可用" }, 502); }
 });
 
-// ========== Chapter images ==========
+// ========== Chapter images (bulk fetch + SSE streaming) ==========
+
+const IMG_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+const IMG_REFERER = "https://www.baozimh.com/";
+const BZCDN_HOSTS = ["https://s1.bzcdn.net", "https://s2.bzcdn.net"];
+
+async function fetchImageAsBase64(url: string): Promise<string | null> {
+  const headers = { "User-Agent": IMG_UA, Referer: IMG_REFERER, Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8" };
+  let imagePath = "";
+  try { imagePath = new URL(url).pathname; } catch { return null; }
+
+  async function tryFetch(host: string, timeout: number) {
+    const resp = await fetch(`${host}${imagePath}`, { headers, signal: AbortSignal.timeout(timeout) });
+    if (!resp.ok || !(resp.headers.get("content-type") || "").startsWith("image/")) throw new Error("bad response");
+    const buf = await resp.arrayBuffer();
+    const ct = resp.headers.get("content-type") || "image/jpeg";
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+    return `data:${ct};base64,${b64}`;
+  }
+
+  try {
+    return await Promise.any(BZCDN_HOSTS.map(h => tryFetch(h, 5000)));
+  } catch {}
+
+  try {
+    const resp = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) return null;
+    const ct = resp.headers.get("content-type") || "";
+    if (!ct.startsWith("image/")) return null;
+    const buf = await resp.arrayBuffer();
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+    return `data:${ct};base64,${b64}`;
+  } catch {
+    return null;
+  }
+}
+
+api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
+  const urls = c.req.query("urls");
+  if (!urls) return c.json({ error: "missing urls" }, 400);
+  const list = urls.split("|");
+
+  return streamSSE(c, async (stream) => {
+    for (let i = 0; i < list.length; i += 5) {
+      const batch = list.slice(i, i + 5);
+      const results = await Promise.allSettled(batch.map(url => fetchImageAsBase64(url)));
+      for (const result of results) {
+        if (result.status === "fulfilled" && result.value) {
+          await stream.writeSSE({ data: JSON.stringify({ image: result.value }) });
+        }
+      }
+    }
+    await stream.writeSSE({ data: JSON.stringify({ done: true }) });
+  });
+});
+
 api.get("/comics/:site/:comicId/:chapterId", async (c) => {
   const { site, comicId, chapterId } = c.req.param();
-  const cacheKey = `v4:chapter:${site}:${comicId}:${chapterId}`;
-  const cached = await getCache<any>(c, cacheKey);
-  if (cached) return c.json(cached);
   try {
     const rawImages = await getRegistry().getChapterImages(site, comicId, {
       id: chapterId,
       url: c.req.query("url") || "",
       title: c.req.query("title") || "",
     });
-    // Use configured origin for proxy URLs (fall back to request origin)
-    const proxyOrigin = (c.env as any).PROXY_ORIGIN || new URL(c.req.url).origin;
-    const proxyBase = `${proxyOrigin}/api/img-proxy?url=`;
-    const images = rawImages.map(u => u ? `${proxyBase}${encodeURIComponent(u)}` : u);
-    const response = { id: chapterId, title: c.req.query("title") || "", images };
-    if (c.env.CACHE) { c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify(response), { expirationTtl: 1800 })); }
-    return c.json(response);
-  } catch { console.error("Chapter images fetch failed"); return c.json({ error: "服务暂时不可用" }, 502); }
+
+    if (rawImages.length === 0) {
+      return c.json({ id: chapterId, title: c.req.query("title") || "", first: [], total: 0, stream: null });
+    }
+
+    // First 3: fetch immediately with CDN racing
+    const first3 = await Promise.all(rawImages.slice(0, 3).map(url => fetchImageAsBase64(url)));
+
+    // Remaining URLs as pipe-delimited string in query param
+    const remaining = rawImages.slice(3);
+    let streamUrl: string | null = null;
+    if (remaining.length > 0) {
+      streamUrl = `/api/comics/${site}/${comicId}/${chapterId}/stream?urls=${encodeURIComponent(remaining.join("|"))}`;
+    }
+
+    return c.json({
+      id: chapterId,
+      title: c.req.query("title") || "",
+      first: first3.filter(Boolean),
+      total: rawImages.length,
+      stream: streamUrl,
+    });
+  } catch {
+    console.error("Chapter images fetch failed");
+    return c.json({ error: "服务暂时不可用" }, 502);
+  }
 });
 
 // ========== Bookshelf (authenticated) ==========
