@@ -118,9 +118,9 @@ export class BaoziManhuaSource implements SiteSource {
       return t.includes("章节目录") || t.includes("章節目錄");
     }).first();
 
-    const chapterEls = fullTitle.length > 0
+    const chapterEls = (fullTitle.length > 0
       ? fullTitle.parent().find(".comics-chapters").toArray()
-      : $(".comics-chapters").toArray();
+      : $(".comics-chapters").toArray()).reverse();
 
     for (const el of chapterEls) {
       const a = $(el).find("a").first();
