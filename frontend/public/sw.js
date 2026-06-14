@@ -1,4 +1,4 @@
-// Comic4CF Service Worker
+// Comic4CF Service Worker — static asset cache only, API bypassed
 const CACHE = "comic4cf-v1";
 const ASSETS = ["/", "/index.html", "/manifest.json", "/icon.svg"];
 
@@ -11,17 +11,18 @@ self.addEventListener("activate", e => {
 });
 
 self.addEventListener("fetch", e => {
+  const url = new URL(e.request.url);
+  // Never cache API or proxy requests
+  if (url.pathname.startsWith("/api/")) return;
   if (e.request.method !== "GET") return;
+
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      const fetchPromise = fetch(e.request).then(resp => {
-        if (resp.ok && resp.type === "basic") {
-          const clone = resp.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return resp;
-      }).catch(() => cached);
-      return cached || fetchPromise;
-    })
+    caches.match(e.request).then(cached => cached || fetch(e.request).then(resp => {
+      if (resp.ok && resp.type === "basic") {
+        const clone = resp.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+      }
+      return resp;
+    }))
   );
 });
