@@ -83,7 +83,7 @@ export default function ReaderPage() {
   // Chapter list
   useEffect(() => {
     if (!site || !comicId) return;
-    api.getComicDetail(site, comicId).then((b: ComicDetail) =>
+    api.getComicDetail(site, comicId).then((b: ComicDetail) => {
       const raw = b.chapters.map(ch => ({ id: ch.id, title: ch.title, url: ch.url || "" }));
       raw.sort((a, b) => {
         const na = parseInt(a.id.match(/\d+/)?.[0] || "0");
@@ -91,7 +91,7 @@ export default function ReaderPage() {
         return na - nb;
       });
       setChapters(raw);
-    ).catch(() => {});
+    }).catch(() => {});
   }, [site, comicId]);
 
   useEffect(() => {
