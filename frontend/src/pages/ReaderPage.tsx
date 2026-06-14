@@ -30,48 +30,11 @@ export default function ReaderPage() {
   const chapterCacheRef = useRef<Map<string, { images: string[]; title: string }>>(new Map());
 
   // Binary stream: fetch all images in a single request, parse length-prefixed blocks
-  async function fetchBinaryStream(url: string): Promise<string[]> {
-    const resp = await fetch(url);
-    const reader = resp.body!.getReader();
-    const blobs: string[] = [];
-
-    async function readExact(n: number): Promise<Uint8Array> {
-      const chunks: Uint8Array[] = [];
-      let remaining = n;
-      while (remaining > 0) {
-        const { done, value } = await reader.read();
-        if (done) throw new Error("unexpected end of stream");
-        chunks.push(value);
-        remaining -= value.length;
-      }
-      const all = new Uint8Array(n);
-      let offset = 0;
-      for (const c of chunks) { all.set(c, offset); offset += c.length; }
-      return all;
-    }
-
-    while (true) {
-      const header = await readExact(2);
-      const ctLen = new DataView(header.buffer).getUint16(0, true);
-      if (ctLen === 0xFFFF) break;
-
-      const ctBytes = await readExact(ctLen);
-      const ct = new TextDecoder().decode(ctBytes);
-
-      const dataLenBuf = await readExact(4);
-      const dataLen = new DataView(dataLenBuf.buffer).getUint32(0, true);
-
-      const data = await readExact(dataLen);
-      const blob = new Blob([data.buffer as ArrayBuffer], { type: ct });
-      blobs.push(URL.createObjectURL(blob));
-    }
-    return blobs;
-  }
-
-  // Fetch chapter images
+  // Fetch chapter images — binary stream, render each as it arrives
   useEffect(() => {
     if (!site || !comicId || !chapterId) return;
     let stale = false;
+    let allUrls: string[] = [];
     const cacheKey = `${site}/${comicId}/${chapterId}`;
 
     const cached = chapterCacheRef.current.get(cacheKey);
@@ -102,23 +65,64 @@ export default function ReaderPage() {
           setLoading(false);
           return;
         }
-        fetchBinaryStream(r.streamUrl)
-          .then(urls => {
-            if (stale) {
-              urls.forEach(u => URL.revokeObjectURL(u));
-              return;
+
+        // Fetch binary stream, render images as they arrive
+        (async () => {
+          try {
+            const resp = await fetch(r.streamUrl!);
+            const reader = resp.body!.getReader();
+
+            async function readExact(n: number): Promise<Uint8Array> {
+              const chunks: Uint8Array[] = [];
+              let remaining = n;
+              while (remaining > 0) {
+                const { done, value } = await reader.read();
+                if (done) throw new Error("unexpected end of stream");
+                chunks.push(value);
+                remaining -= value.length;
+              }
+              const all = new Uint8Array(n);
+              let offset = 0;
+              for (const c of chunks) { all.set(c, offset); offset += c.length; }
+              return all;
             }
-            prevImages.current = urls;
-            setImages(urls);
-            chapterCacheRef.current.set(cacheKey, { images: urls, title: r.title });
-          })
-          .catch(e => { if (!stale) setError(`图片加载失败: ${e.message}`); })
-          .finally(() => { if (!stale) setLoading(false); });
+
+            while (true) {
+              const header = await readExact(2);
+              const ctLen = new DataView(header.buffer).getUint16(0, true);
+              if (ctLen === 0xFFFF) break;
+
+              const ctBytes = await readExact(ctLen);
+              const ct = new TextDecoder().decode(ctBytes);
+
+              const dataLenBuf = await readExact(4);
+              const dataLen = new DataView(dataLenBuf.buffer).getUint32(0, true);
+
+              const data = await readExact(dataLen);
+              const blob = new Blob([data.buffer as ArrayBuffer], { type: ct });
+              const url = URL.createObjectURL(blob);
+              allUrls.push(url);
+              if (!stale) {
+                setImages([...allUrls]);
+                prevImages.current = allUrls;
+                if (allUrls.length === 1) setLoading(false);
+              }
+            }
+
+            if (!stale) {
+              chapterCacheRef.current.set(cacheKey, { images: allUrls, title: r.title });
+              prevImages.current = allUrls;
+            }
+          } catch (e: any) {
+            if (!stale) setError(`图片加载失败: ${e.message}`);
+            if (!stale) setLoading(false);
+          }
+        })();
       })
-      .catch(e => { if (!stale) setError(e.message); setLoading(false); });
+      .catch(e => { if (!stale) { setError(e.message); setLoading(false); } });
 
     api.addHistory({ site, comicId, title: chapterTitle, author: "", coverUrl: "", chapterId, chapterTitle }).catch(() => {});
-    return () => { stale = true; };
+    return () => { stale = true; allUrls.forEach(u => URL.revokeObjectURL(u)); };
   }, [site, comicId, chapterId]);
 
   // Chapter list
