@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.output/
+.wrangler/
+*.tsbuildinfo
+.env
+.env.local
+.DS_Store
+frontend/vite.config.d.ts
+frontend/vite.config.js
