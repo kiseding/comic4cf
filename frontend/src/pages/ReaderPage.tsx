@@ -155,8 +155,8 @@ export default function ReaderPage() {
     const dt = Date.now() - touchStart.current.t;
     touchStart.current = null;
     if (dt < 500 && Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      const id = nextChapterId(dx < -60 ? 1 : dx > 60 ? -1 : 0);
-      if (id) goChapter(id);
+      const dir = dx < -60 ? 1 as const : dx > 60 ? -1 as const : null;
+      if (dir) { const id = nextChapterId(dir); if (id) goChapter(id); }
     }
   };
 
