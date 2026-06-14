@@ -19,7 +19,7 @@ export default function ComicDetailPage() {
 
   useEffect(() => {
     if (!site || !comicId) return;
-    setLoading(true);
+    setLoading(true); setError("");
 
     const loadDetail = api.getComicDetail(site, comicId);
     const loadShelf = user ? api.getBookshelf() : Promise.resolve(null);

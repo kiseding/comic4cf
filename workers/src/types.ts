@@ -33,12 +33,6 @@ export interface ChapterItem {
   order: number;
 }
 
-export interface ChapterContent {
-  id: string;
-  title: string;
-  images: string[];  // Array of image URLs instead of text
-}
-
 export interface ResolvedURL {
   siteKey: string;
   comicId: string;
@@ -56,14 +50,6 @@ export interface SiteSource {
   resolveURL(url: string): ResolvedURL | null;
   // Optional: provide a recommendation list filtered by a category slug.
   getCategoryBooks?(tag: string): Promise<SearchResult[]>;
-}
-
-// Database types
-export interface UserRecord {
-  id: number;
-  username: string;
-  password_hash: string;
-  created_at: string;
 }
 
 export interface BookshelfItem {

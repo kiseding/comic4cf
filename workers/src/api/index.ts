@@ -161,9 +161,11 @@ api.put("/admin/users/:id/reset-password", authMiddleware, adminMiddleware, asyn
 });
 
 // ========== Rate limiting for public endpoints ==========
-api.use("/sources", rateLimit);
-api.use("/homepage", rateLimit);
-api.use("/search", rateLimit);
+api.use("/auth/login", rateLimit(10));
+api.use("/auth/change-password", rateLimit(10));
+api.use("/sources", rateLimit());
+api.use("/homepage", rateLimit());
+api.use("/search", rateLimit());
 
 // ========== Source list ==========
 api.get("/sources", async (c) => {
@@ -181,8 +183,7 @@ api.get("/homepage", async (c) => {
     const books = tag
       ? await getRegistry().getCategoryBooks(tag)
       : await getRegistry().getHomepageBooks();
-      const proxied = books;
-    const resp = { books: proxied, tag };
+    const resp = { books, tag };
     if (c.env.CACHE && books.length > 0) {
       c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify(resp), { expirationTtl: 1800 }));
     }
@@ -343,7 +344,7 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
   let rawImages: string[];
 
   if (urlsParam) {
-    rawImages = urlsParam.split("|");
+    rawImages = JSON.parse(decodeURIComponent(urlsParam));
   } else {
     const { site, comicId, chapterId } = c.req.param();
     rawImages = (await getRegistry().getChapterImages(site, comicId, {
@@ -397,7 +398,7 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
       return c.json({ id: chapterId, title: c.req.query("title") || "", total: 0, streamUrl: null });
     }
 
-    const encoded = encodeURIComponent(rawImages.join("|"));
+    const encoded = encodeURIComponent(JSON.stringify(rawImages));
     const streamUrl = `/api/comics/${site}/${comicId}/${chapterId}/stream?urls=${encoded}`;
 
     return c.json({
@@ -464,55 +465,4 @@ api.put("/progress/:site/:comicId", authMiddleware, async (c) => {
   await db.updateReadingProgress(d, u.userId, site, comicId, chapterIndex, chapterId, chapterTitle);
   return c.json({ ok: true });
 });
-
-
-// ========== Image proxy (anti-tracking) ==========
-api.get("/img-proxy", async (c) => {
-  let url = c.req.query("url");
-  // Handle protocol-relative URLs
-  if (url && url.startsWith("//")) url = "https:" + url;
-  if (!url) return c.json({ error: "missing url" }, 400);
-  const allowedHosts = ["baozimh.com", "baozimhcdn.com", "baozicdn.com", "bzcdn.net", "webmota.com", "kukuc.co", "twmanga.com"];
-  try {
-    const u = new URL(url);
-    if (!allowedHosts.some(h => u.hostname === h || u.hostname.endsWith("." + h))) {
-      return c.json({ error: "host not allowed" }, 403);
-    }
-  } catch { return c.json({ error: "invalid url" }, 400); }
-  // Extract image path and race bzcdn CDNs with fallback to original
-  let imagePath = "";
-  try { imagePath = new URL(url).pathname; } catch { return c.json({ error: "invalid url" }, 400); }
-  const originalHost = url.replace(imagePath, "");
-  const bzcdnHosts = ["https://s1.bzcdn.net", "https://s2.bzcdn.net"];
-  const headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    Referer: "https://www.baozimh.com/",
-    Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-  };
-
-  async function tryFetch(host: string, timeout: number) {
-    const resp = await fetch(`${host}${imagePath}`, { headers, signal: AbortSignal.timeout(timeout) });
-    if (!resp.ok || !(resp.headers.get("content-type") || "").startsWith("image/")) {
-      throw new Error(`bad response from ${host}`);
-    }
-    return resp;
-  }
-
-  try {
-    const resp = await Promise.any(bzcdnHosts.map(h => tryFetch(h, 5000)));
-    return new Response(resp.body, { headers: { "Content-Type": resp.headers.get("content-type")!, "Cache-Control": "public, max-age=86400" } });
-  } catch { /* fall through to original CDN */ }
-
-  // Fallback: original CDN
-  try {
-    const resp = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
-    if (!resp.ok) return c.json({ error: `upstream ${resp.status}` }, 502);
-    const ct = resp.headers.get("content-type") || "";
-    if (!ct.startsWith("image/")) return c.json({ error: "not an image" }, 403);
-    return new Response(resp.body, { headers: { "Content-Type": ct, "Cache-Control": "public, max-age=86400" } });
-  } catch {
-    return c.json({ error: "fetch failed" }, 502);
-  }
-});
-
 export default api;

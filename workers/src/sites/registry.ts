@@ -29,7 +29,6 @@ export class SiteRegistry {
   }
 
   getSource(key: string): SiteSource | undefined { return this.sources.get(key); }
-  getSources(): SourceMeta[] { return this.meta; }
   getSearchableSources(): SourceMeta[] { return this.meta.filter(m => m.searchable); }
 
   resolveURL(url: string): { siteKey: string; comicId: string; chapterId?: string } | null {
@@ -67,7 +66,7 @@ export class SiteRegistry {
       });
     const results = await Promise.all(promises);
     for (const items of results) all.push(...items);
-    return all.length > 0 ? all.slice(0, 60) : this.getHomepageBooks();
+    return all.slice(0, 60);
   }
 
   async searchAll(sites: string[], keyword: string, limit: number): Promise<SearchResult[]> {

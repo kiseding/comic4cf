@@ -40,19 +40,6 @@ export async function fetchHTML(url: string, opts?: RequestInit): Promise<string
   return decoder.decode(buf);
 }
 
-export async function postFormHTML(
-  url: string,
-  body: URLSearchParams,
-  opts?: RequestInit
-): Promise<string> {
-  return fetchHTML(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-    ...opts,
-  });
-}
-
 export function parseHTML(html: string) {
   return load(html);
 }
@@ -70,12 +57,4 @@ export function cleanText(text: string): string {
   return text.replace(/[\s　]+/g, " ").trim();
 }
 
-export function extractBookIdFromURL(
-  url: string,
-  pattern: RegExp
-): string | null {
-  const m = url.match(pattern);
-  return m ? m[1] : null;
-}
 
-// Wrap image URL through Worker proxy to hide user IP

@@ -60,7 +60,7 @@ export interface SourceMeta { key: string; displayName: string; tags: string[]; 
 export interface SearchItem { key?: string; site: string; comicId: string; title: string; author: string; description: string; coverUrl: string; url: string; latestChapter?: string; status?: string; categories?: string[]; }
 export interface ChapterItem { id: string; title: string; url: string; order: number; }
 export interface ComicDetail { site: string; comicId: string; title: string; author: string; description: string; coverUrl: string; sourceUrl: string; status: string; categories: string[]; chapters: ChapterItem[]; }
-export interface ChapterImages { id: string; title: string; total: number; streamUrl: string | null; images?: string[]; }
+export interface ChapterImages { id: string; title: string; total: number; streamUrl: string | null; }
 export interface BookshelfItem { id: number; site: string; comic_id: string; title: string; author: string; cover_url: string; description: string; source_url: string; chapter_index: number; chapter_id: string; chapter_title: string; updated_at: string; }
 export interface HistoryItem { id: number; site: string; comic_id: string; title: string; author: string; cover_url: string; chapter_id: string; chapter_title: string; updated_at: string; }
 
@@ -72,14 +72,13 @@ export async function listUsers() { return request<{ users: Array<{ id: number; 
 export async function adminCreateUser(username: string, password: string) { return request<{ user: { id: number; username: string } }>("/admin/users", { method: "POST", body: JSON.stringify({ username, password }) }); }
 export async function adminDeleteUser(id: number) { return request<{ ok: boolean }>(`/admin/users/${id}`, { method: "DELETE" }); }
 export async function adminResetPassword(id: number, password: string) { return request<{ ok: boolean }>(`/admin/users/${id}/reset-password`, { method: "PUT", body: JSON.stringify({ password }) }); }
-export async function getSources() { return request<{ sources: SourceMeta[] }>("/sources"); }
 export async function getHomepage(tag?: string) {
   const qs = tag ? `?tag=${encodeURIComponent(tag)}` : "";
   return request<{ books: SearchItem[]; tag?: string }>(`/homepage${qs}`);
 }
 export async function search(keyword: string, sites?: string[]) { return request<{ results?: SearchItem[]; urlSearch?: boolean; item?: SearchItem }>("/search", { method: "POST", body: JSON.stringify({ keyword, sites }) }); }
 export async function getComicDetail(site: string, comicId: string) { return request<ComicDetail>(`/comics/${site}/${comicId}`); }
-export async function getChapterImages(site: string, comicId: string, chapterId: string, title: string, url: string) { return request<ChapterImages>(`/comics/${site}/${comicId}/${chapterId}?${new URLSearchParams({ title, url })}`); }
+export async function getChapterImages(site: string, comicId: string, chapterId: string, title: string, url: string, signal?: AbortSignal) { return request<ChapterImages>(`/comics/${site}/${comicId}/${chapterId}?${new URLSearchParams({ title, url })}`, { signal }); }
 export async function getBookshelf() { return request<{ items: BookshelfItem[] }>("/bookshelf"); }
 export async function addToBookshelf(book: { site: string; comicId: string; title: string; author: string; coverUrl: string; description: string; sourceUrl: string }) { return request<{ item: BookshelfItem }>("/bookshelf", { method: "POST", body: JSON.stringify(book) }); }
 export async function removeFromBookshelf(site: string, comicId: string) { return request<{ ok: boolean }>(`/bookshelf/${site}/${comicId}`, { method: "DELETE" }); }

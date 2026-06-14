@@ -28,11 +28,27 @@ export default function ReaderPage() {
   const lastScrollTop = useRef(0);
   // Chapter image cache for instant back-navigation
   const chapterCacheRef = useRef<Map<string, { images: string[]; title: string }>>(new Map());
+  const chaptersRef = useRef(chapters);
+  chaptersRef.current = chapters;
+  const fetchAbortRef = useRef<AbortController | null>(null);
+  const MAX_CACHE = 10;
+  function setCache(key: string, value: { images: string[]; title: string }) {
+    const map = chapterCacheRef.current;
+    while (map.size >= MAX_CACHE) {
+      const first = map.keys().next().value;
+      if (first) {
+        const entry = map.get(first);
+        if (entry) entry.images.forEach(u => URL.revokeObjectURL(u));
+        map.delete(first);
+      }
+    }
+    map.set(key, value);
+  }
 
   // Binary stream: fetch all images in a single request, parse length-prefixed blocks
   // Parse binary stream: returns all Blob URLs, calls onImage as each arrives
-  async function readImageStream(url: string, onImage?: (blobUrl: string) => void): Promise<string[]> {
-    const resp = await fetch(url);
+  async function readImageStream(url: string, onImage?: (blobUrl: string) => void, signal?: AbortSignal): Promise<string[]> {
+    const resp = await fetch(url, { signal });
     const reader = resp.body!.getReader();
     const allUrls: string[] = [];
     let buf = new Uint8Array(0);
@@ -91,6 +107,10 @@ export default function ReaderPage() {
     let allUrls: string[] = [];
     const cacheKey = `${site}/${comicId}/${chapterId}`;
 
+    fetchAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    fetchAbortRef.current = ctrl;
+
     const cached = chapterCacheRef.current.get(cacheKey);
     if (cached) {
       prevImages.current = cached.images;
@@ -102,6 +122,8 @@ export default function ReaderPage() {
         if (scrollRef.current) scrollRef.current.scrollTop = 0;
       });
       api.addHistory({ site, comicId, title: chapterTitle, author: "", coverUrl: "", chapterId, chapterTitle }).catch(() => {});
+      const idx = chaptersRef.current.findIndex(c => c.id === chapterId);
+      if (idx >= 0) api.updateProgress(site!, comicId!, idx, chapterId!, cached.title).catch(() => {});
       return;
     }
 
@@ -110,7 +132,7 @@ export default function ReaderPage() {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     setLoading(true); setError("");
 
-    api.getChapterImages(site, comicId, chapterId, chapterTitle, chapterUrl)
+    api.getChapterImages(site, comicId, chapterId, chapterTitle, chapterUrl, ctrl.signal)
       .then(r => {
         if (stale) return;
         setTitle(r.title);
@@ -127,22 +149,26 @@ export default function ReaderPage() {
             prevImages.current = allUrls;
             if (allUrls.length === 1) setLoading(false);
           }
-        })
+        }, ctrl.signal)
           .then(urls => {
             if (!stale) {
-              chapterCacheRef.current.set(cacheKey, { images: urls, title: r.title });
+              setCache(cacheKey, { images: urls, title: r.title });
               prevImages.current = urls;
+              const idx = chaptersRef.current.findIndex(c => c.id === chapterId);
+              if (idx >= 0) api.updateProgress(site!, comicId!, idx, chapterId!, r.title).catch(() => {});
             }
           })
           .catch((e: any) => {
-            if (!stale) setError(`图片加载失败: ${e.message}`);
-            if (!stale) setLoading(false);
+            if (stale) return;
+            if ((e as Error)?.name === "AbortError") return;
+            setError(`图片加载失败: ${e.message}`);
+            setLoading(false);
           });
       })
       .catch(e => { if (!stale) { setError(e.message); setLoading(false); } });
 
     api.addHistory({ site, comicId, title: chapterTitle, author: "", coverUrl: "", chapterId, chapterTitle }).catch(() => {});
-    return () => { stale = true; allUrls.forEach(u => u.startsWith("blob:") && URL.revokeObjectURL(u)); };
+    return () => { stale = true; ctrl.abort(); allUrls.forEach(u => u.startsWith("blob:") && URL.revokeObjectURL(u)); };
   }, [site, comicId, chapterId]);
 
   // Chapter list
@@ -171,32 +197,10 @@ export default function ReaderPage() {
       .then(r => {
         if (!r.streamUrl || r.total === 0) return;
         readImageStream(r.streamUrl).then(urls => {
-          chapterCacheRef.current.set(cacheKey, { images: urls, title: next.title });
+          setCache(cacheKey, { images: urls, title: next.title });
         }).catch(() => {});
       })
       .catch(() => {});
-  }, [site, comicId, images, loading, chIdx, chapters]);
-
-  // Chapter list
-  useEffect(() => {
-    if (!site || !comicId) return;
-    api.getComicDetail(site, comicId).then((b: ComicDetail) =>
-      setChapters(b.chapters.map(ch => ({ id: ch.id, title: ch.title, url: ch.url || "" })))
-    ).catch(() => {});
-  }, [site, comicId]);
-
-  useEffect(() => {
-    if (chapters.length) setChIdx(chapters.findIndex(ch => ch.id === chapterId));
-  }, [chapters, chapterId]);
-
-  // Preload next chapter — warm the API cache
-  useEffect(() => {
-    if (!site || !comicId || images.length === 0 || loading) return;
-    const nextId = nextChapterId(1);
-    if (!nextId) return;
-    const next = chapters.find(ch => ch.id === nextId);
-    if (!next) return;
-    api.getChapterImages(site, comicId, next.id, next.title, next.url).catch(() => {});
   }, [site, comicId, images, loading, chIdx, chapters]);
 
   function chapterSortId(id: string) {

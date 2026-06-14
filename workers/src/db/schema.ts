@@ -113,18 +113,6 @@ export async function listBookshelf(
   return result.results;
 }
 
-export async function getBookshelfItem(
-  db: D1Database,
-  userId: number,
-  site: string,
-  comicId: string
-): Promise<BookshelfRow | null> {
-  return db
-    .prepare("SELECT * FROM bookshelf WHERE user_id = ? AND site = ? AND comic_id = ?")
-    .bind(userId, site, comicId)
-    .first<BookshelfRow>();
-}
-
 export async function addToBookshelf(
   db: D1Database,
   userId: number,
