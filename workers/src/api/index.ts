@@ -344,7 +344,7 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
   let rawImages: string[];
 
   if (urlsParam) {
-    rawImages = JSON.parse(decodeURIComponent(urlsParam));
+    rawImages = JSON.parse(urlsParam);
   } else {
     const { site, comicId, chapterId } = c.req.param();
     rawImages = (await getRegistry().getChapterImages(site, comicId, {
