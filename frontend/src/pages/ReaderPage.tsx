@@ -1,5 +1,5 @@
 // Comic reader — scroll mode with image viewer
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom";
 import Modal from "../components/Modal";
 import * as api from "../lib/api";
@@ -257,7 +257,7 @@ export default function ReaderPage() {
               key={ch.id}
               ref={i === chIdx ? tocRef : undefined}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${i === chIdx ? 'bg-[#6366f1]/10 text-[#6366f1] font-medium border-l-2 border-[#6366f1]' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
-              onClick={() => { goChapter(i); setShowToc(false); }}
+              onClick={() => { goChapter(chapters[i].id); setShowToc(false); }}
             >
               <span className="text-xs text-gray-400 mr-2">{i + 1}/{chapters.length}</span>
               {ch.title}
