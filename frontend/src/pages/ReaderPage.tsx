@@ -161,7 +161,7 @@ export default function ReaderPage() {
   }, [showToc]);
 
   const hasPrevCh = chIdx > 0;
-  const hasNextCh = chIdx < chapters.length - 1;
+  const hasNextCh = chIdx >= 0 && chIdx < chapters.length - 1;
 
   // Scroll handler for header show/hide
   useEffect(() => {
