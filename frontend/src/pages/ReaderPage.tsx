@@ -85,8 +85,7 @@ export default function ReaderPage() {
     if (!site || !comicId) return;
     api.getComicDetail(site, comicId).then((b: ComicDetail) => {
       const raw = b.chapters.map(ch => ({ id: ch.id, title: ch.title, url: ch.url || "" }));
-      // Sort by chapter number: split "0_799" → compare [0,799] vs [0,800]
-      raw.sort((a, b) => {
+      const sorted = [...raw].sort((a, b) => {
         const ap = a.id.split("_").map(Number);
         const bp = b.id.split("_").map(Number);
         for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
@@ -94,7 +93,7 @@ export default function ReaderPage() {
         }
         return 0;
       });
-      setChapters(raw);
+      setChapters(sorted);
     }).catch(() => {});
   }, [site, comicId]);
 
