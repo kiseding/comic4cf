@@ -308,6 +308,16 @@ const IMG_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KH
 const IMG_REFERER = "https://www.baozimh.com/";
 const BZCDN_HOSTS = ["https://s1.bzcdn.net", "https://s2.bzcdn.net"];
 
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
 async function fetchImageAsBase64(url: string): Promise<string | null> {
   const headers = { "User-Agent": IMG_UA, Referer: IMG_REFERER, Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8" };
   let imagePath = "";
@@ -318,8 +328,7 @@ async function fetchImageAsBase64(url: string): Promise<string | null> {
     if (!resp.ok || !(resp.headers.get("content-type") || "").startsWith("image/")) throw new Error("bad response");
     const buf = await resp.arrayBuffer();
     const ct = resp.headers.get("content-type") || "image/jpeg";
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-    return `data:${ct};base64,${b64}`;
+    return `data:${ct};base64,${arrayBufferToBase64(buf)}`;
   }
 
   try {
@@ -332,8 +341,7 @@ async function fetchImageAsBase64(url: string): Promise<string | null> {
     const ct = resp.headers.get("content-type") || "";
     if (!ct.startsWith("image/")) return null;
     const buf = await resp.arrayBuffer();
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-    return `data:${ct};base64,${b64}`;
+    return `data:${ct};base64,${arrayBufferToBase64(buf)}`;
   } catch {
     return null;
   }
