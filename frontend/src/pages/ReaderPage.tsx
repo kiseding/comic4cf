@@ -25,10 +25,10 @@ export default function ReaderPage() {
   const [chIdx, setChIdx] = useState(-1);
   const [failedImages, setFailedImages] = useState<Set<number>>(new Set());
   const [retryTimestamps, setRetryTimestamps] = useState<Record<number, number>>({});
+  const sortedIdsRef = useRef<string[]>([]);
+  const sortedIdxRef = useRef(-1);
   const chIdxRef = useRef(chIdx);
-  const chaptersLenRef = useRef(chapters.length);
   chIdxRef.current = chIdx;
-  chaptersLenRef.current = chapters.length;
   const [showHeader, setShowHeader] = useState(true);
   const lastScrollTop = useRef(0);
   // Chapter image cache for instant back-navigation
@@ -107,18 +107,18 @@ export default function ReaderPage() {
     }).catch(() => {});
   }, [site, comicId, images, loading, chapters, chapterId]);
 
-  const goChapter = useCallback((idx: number) => {
-    const ch = chapters[idx];
+  const goChapter = useCallback((id: string) => {
+    const ch = chapters.find(c => c.id === id);
     if (!ch) return;
-    navigate(`/read/${site}/${comicId}/${ch.id}?title=${encodeURIComponent(ch.title)}&url=${encodeURIComponent(ch.url)}`);
+    navigate(`/read/${site}/${comicId}/${id}?title=${encodeURIComponent(ch.title)}&url=${encodeURIComponent(ch.url)}`);
   }, [site, comicId, chapters, navigate]);
 
   // Keyboard navigation (uses refs to avoid re-registration on chapter change)
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (showToc) return;
-      if (e.key === "ArrowLeft" || e.key === "a") { if (chIdxRef.current > 0) goChapter(chIdxRef.current - 1); }
-      if (e.key === "ArrowRight" || e.key === "d") { if (chIdxRef.current < chaptersLenRef.current - 1) goChapter(chIdxRef.current + 1); }
+      if (e.key === "ArrowLeft" || e.key === "a") { if (sortedIdxRef.current > 0) goChapter(sortedIdsRef.current[sortedIdxRef.current - 1]); }
+      if (e.key === "ArrowRight" || e.key === "d") { if (sortedIdxRef.current >= 0 && sortedIdxRef.current < sortedIdsRef.current.length - 1) goChapter(sortedIdsRef.current[sortedIdxRef.current + 1]); }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
@@ -139,8 +139,8 @@ export default function ReaderPage() {
     touchStart.current = null;
     // Horizontal swipe with enough distance and speed
     if (dt < 500 && Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      if (dx < -60 && chIdx < chapters.length - 1) goChapter(chIdx + 1);
-      else if (dx > 60 && chIdx > 0) goChapter(chIdx - 1);
+      if (dx < -60 && chIdx < chapters.length - 1) goChapter(sortedIds[sortedIdx + 1]);
+      else if (dx > 60 && chIdx > 0) goChapter(sortedIds[sortedIdx - 1]);
     }
   };
 
@@ -151,8 +151,24 @@ export default function ReaderPage() {
     }
   }, [showToc]);
 
-  const hasPrevCh = chIdx > 0;
-  const hasNextCh = chIdx >= 0 && chIdx < chapters.length - 1;
+  // Build sorted order for correct navigation (source order preserved for display)
+  const sortedIds = useMemo(() => {
+    return [...chapters].sort((a, b) => {
+      const ap = (a.id || "").split("_").map(Number);
+      const bp = (b.id || "").split("_").map(Number);
+      for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
+        if ((ap[i] || 0) !== (bp[i] || 0)) return (ap[i] || 0) - (bp[i] || 0);
+      }
+      return 0;
+    }).map(ch => ch.id);
+  }, [chapters]);
+
+  const curChapterId = chapters[chIdx]?.id || "";
+  const sortedIdx = sortedIds.indexOf(curChapterId);
+  sortedIdsRef.current = sortedIds;
+  sortedIdxRef.current = sortedIdx;
+  const hasPrevCh = sortedIdx > 0;
+  const hasNextCh = sortedIdx >= 0 && sortedIdx < sortedIds.length - 1;
 
   // Scroll handler for header show/hide
   useEffect(() => {
@@ -224,10 +240,10 @@ export default function ReaderPage() {
           {chapters.length > 0 && (
             <div className="flex justify-between w-full max-w-[800px] py-6 px-4">
               <button className="btn-ghost text-base min-h-[48px] px-4" disabled={!hasPrevCh}
-                onClick={() => { if (hasPrevCh) goChapter(chIdx - 1); }}>← 上一话</button>
+                onClick={() => { if (hasPrevCh) goChapter(sortedIds[sortedIdx - 1]); }}>← 上一话</button>
               <span className="text-sm text-gray-400 self-center">{chIdx + 1}/{chapters.length}</span>
               <button className="btn-ghost text-base min-h-[48px] px-4" disabled={!hasNextCh}
-                onClick={() => { if (hasNextCh) goChapter(chIdx + 1); }}>下一话 →</button>
+                onClick={() => { if (hasNextCh) goChapter(sortedIds[sortedIdx + 1]); }}>下一话 →</button>
             </div>
           )}
         </div>
