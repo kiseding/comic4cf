@@ -291,7 +291,7 @@ api.post("/search/stream", async (c) => {
 // ========== Comic detail ==========
 api.get("/comics/:site/:comicId", async (c) => {
   const { site, comicId } = c.req.param();
-  const cacheKey = `v4:comic:${site}:${comicId}`;
+  const cacheKey = `v5:comic:${site}:${comicId}`;
   const cached = await getCache<any>(c, cacheKey);
   if (cached) return c.json(cached);
   try {
