@@ -339,12 +339,19 @@ async function fetchImageBinary(url: string, signal?: AbortSignal): Promise<{ ct
 
 // Binary stream endpoint: length-prefixed image blocks
 api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
-  const { site, comicId, chapterId } = c.req.param();
-  const rawImages = await getRegistry().getChapterImages(site, comicId, {
-    id: chapterId,
-    url: c.req.query("url") || "",
-    title: c.req.query("title") || "",
-  });
+  const urlsParam = c.req.query("urls");
+  let rawImages: string[];
+
+  if (urlsParam) {
+    rawImages = urlsParam.split("|");
+  } else {
+    const { site, comicId, chapterId } = c.req.param();
+    rawImages = (await getRegistry().getChapterImages(site, comicId, {
+      id: chapterId,
+      url: c.req.query("url") || "",
+      title: c.req.query("title") || "",
+    }));
+  }
 
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
@@ -379,7 +386,6 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
 
 api.get("/comics/:site/:comicId/:chapterId", async (c) => {
   const { site, comicId, chapterId } = c.req.param();
-  const streamUrl = `/api/comics/${site}/${comicId}/${chapterId}/stream`;
   try {
     const rawImages = await getRegistry().getChapterImages(site, comicId, {
       id: chapterId,
@@ -388,8 +394,11 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
     });
 
     if (rawImages.length === 0) {
-      return c.json({ id: chapterId, title: c.req.query("title") || "", images: [], total: 0, streamUrl: null });
+      return c.json({ id: chapterId, title: c.req.query("title") || "", total: 0, streamUrl: null });
     }
+
+    const encoded = encodeURIComponent(rawImages.join("|"));
+    const streamUrl = `/api/comics/${site}/${comicId}/${chapterId}/stream?urls=${encoded}`;
 
     return c.json({
       id: chapterId,
