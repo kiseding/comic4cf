@@ -344,7 +344,7 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
   let rawImages: string[];
 
   if (urlsParam) {
-    rawImages = JSON.parse(urlsParam);
+    rawImages = urlsParam.split("|");
   } else {
     const { site, comicId, chapterId } = c.req.param();
     rawImages = (await getRegistry().getChapterImages(site, comicId, {
@@ -398,7 +398,7 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
       return c.json({ id: chapterId, title: c.req.query("title") || "", total: 0, streamUrl: null });
     }
 
-    const encoded = encodeURIComponent(JSON.stringify(rawImages));
+    const encoded = encodeURIComponent(rawImages.join("|"));
     const streamUrl = `/api/comics/${site}/${comicId}/${chapterId}/stream?urls=${encoded}`;
 
     return c.json({
