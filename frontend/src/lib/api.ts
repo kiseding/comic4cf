@@ -60,7 +60,7 @@ export interface SourceMeta { key: string; displayName: string; tags: string[]; 
 export interface SearchItem { key?: string; site: string; comicId: string; title: string; author: string; description: string; coverUrl: string; url: string; latestChapter?: string; status?: string; categories?: string[]; }
 export interface ChapterItem { id: string; title: string; url: string; order: number; }
 export interface ComicDetail { site: string; comicId: string; title: string; author: string; description: string; coverUrl: string; sourceUrl: string; status: string; categories: string[]; chapters: ChapterItem[]; }
-export interface ChapterImages { id: string; title: string; first?: string[]; total?: number; stream?: string; images?: string[]; }
+export interface ChapterImages { id: string; title: string; total: number; streamUrl: string | null; images?: string[]; }
 export interface BookshelfItem { id: number; site: string; comic_id: string; title: string; author: string; cover_url: string; description: string; source_url: string; chapter_index: number; chapter_id: string; chapter_title: string; updated_at: string; }
 export interface HistoryItem { id: number; site: string; comic_id: string; title: string; author: string; cover_url: string; chapter_id: string; chapter_title: string; updated_at: string; }
 

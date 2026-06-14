@@ -29,31 +29,43 @@ export default function ReaderPage() {
   // Chapter image cache for instant back-navigation
   const chapterCacheRef = useRef<Map<string, { images: string[]; title: string }>>(new Map());
 
-  // SSE stream helper for remaining images
-  async function fetchStream(url: string, onImage: (img: string) => void): Promise<void> {
-    try {
-      const resp = await fetch(url);
-      const reader = resp.body?.getReader();
-      if (!reader) return;
-      const decoder = new TextDecoder();
-      let buf = "";
-      while (true) {
+  // Binary stream: fetch all images in a single request, parse length-prefixed blocks
+  async function fetchBinaryStream(url: string): Promise<string[]> {
+    const resp = await fetch(url);
+    const reader = resp.body!.getReader();
+    const blobs: string[] = [];
+
+    async function readExact(n: number): Promise<Uint8Array> {
+      const chunks: Uint8Array[] = [];
+      let remaining = n;
+      while (remaining > 0) {
         const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() || "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6);
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.done) return;
-            if (parsed.image) onImage(parsed.image);
-          } catch {}
-        }
+        if (done) throw new Error("unexpected end of stream");
+        chunks.push(value);
+        remaining -= value.length;
       }
-    } catch {}
+      const all = new Uint8Array(n);
+      let offset = 0;
+      for (const c of chunks) { all.set(c, offset); offset += c.length; }
+      return all;
+    }
+
+    while (true) {
+      const header = await readExact(2);
+      const ctLen = new DataView(header.buffer).getUint16(0, true);
+      if (ctLen === 0xFFFF) break;
+
+      const ctBytes = await readExact(ctLen);
+      const ct = new TextDecoder().decode(ctBytes);
+
+      const dataLenBuf = await readExact(4);
+      const dataLen = new DataView(dataLenBuf.buffer).getUint32(0, true);
+
+      const data = await readExact(dataLen);
+      const blob = new Blob([data.buffer as ArrayBuffer], { type: ct });
+      blobs.push(URL.createObjectURL(blob));
+    }
+    return blobs;
   }
 
   // Fetch chapter images
@@ -62,7 +74,6 @@ export default function ReaderPage() {
     let stale = false;
     const cacheKey = `${site}/${comicId}/${chapterId}`;
 
-    // Check cache first
     const cached = chapterCacheRef.current.get(cacheKey);
     if (cached) {
       prevImages.current = cached.images;
@@ -70,47 +81,43 @@ export default function ReaderPage() {
       setImages(cached.images);
       setTitle(cached.title);
       setLoading(false);
-      setError("");
       requestAnimationFrame(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = 0;
       });
-      api.addHistory({ site, comicId, title: chapterTitle, author: "", coverUrl: "", chapterId, chapterTitle }).catch(err => console.warn("history save failed:", err));
+      api.addHistory({ site, comicId, title: chapterTitle, author: "", coverUrl: "", chapterId, chapterTitle }).catch(() => {});
       return;
     }
 
-    // Not cached — fetch
     prevImages.current = [];
     setImages([]);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     setLoading(true); setError("");
+
     api.getChapterImages(site, comicId, chapterId, chapterTitle, chapterUrl)
       .then(r => {
         if (stale) return;
-        // Support both new (first+stream) and old (images) API format
-        const initialImages = r.first || (r.images || []);
-        prevImages.current = initialImages;
+        setTitle(r.title);
         prevTitle.current = r.title;
-        setImages(initialImages); setTitle(r.title);
-        setLoading(false);
-        requestAnimationFrame(() => {
-          if (scrollRef.current) scrollRef.current.scrollTop = 0;
-        });
-        if (r.stream && r.total && r.total > initialImages.length) {
-          const acc = [...initialImages];
-          fetchStream(r.stream, (image) => {
-            acc.push(image);
-            setImages([...acc]);
-          }).then(() => {
-            chapterCacheRef.current.set(cacheKey, { images: acc, title: r.title });
-            prevImages.current = acc;
-          });
-        } else if (initialImages.length > 0) {
-          chapterCacheRef.current.set(cacheKey, { images: initialImages, title: r.title });
+        if (!r.streamUrl || r.total === 0) {
+          setLoading(false);
+          return;
         }
+        fetchBinaryStream(r.streamUrl)
+          .then(urls => {
+            if (stale) {
+              urls.forEach(u => URL.revokeObjectURL(u));
+              return;
+            }
+            prevImages.current = urls;
+            setImages(urls);
+            chapterCacheRef.current.set(cacheKey, { images: urls, title: r.title });
+          })
+          .catch(e => { if (!stale) setError(`图片加载失败: ${e.message}`); })
+          .finally(() => { if (!stale) setLoading(false); });
       })
-      .catch(e => { if (!stale) setError(e.message); })
-      .finally(() => { if (!stale) setLoading(false); });
-    api.addHistory({ site, comicId, title: chapterTitle, author: "", coverUrl: "", chapterId, chapterTitle }).catch(err => console.warn("history save failed:", err));
+      .catch(e => { if (!stale) setError(e.message); setLoading(false); });
+
+    api.addHistory({ site, comicId, title: chapterTitle, author: "", coverUrl: "", chapterId, chapterTitle }).catch(() => {});
     return () => { stale = true; };
   }, [site, comicId, chapterId]);
 

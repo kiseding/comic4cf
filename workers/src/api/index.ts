@@ -302,33 +302,23 @@ api.get("/comics/:site/:comicId", async (c) => {
   } catch { console.error("Comic detail fetch failed"); return c.json({ error: "服务暂时不可用" }, 502); }
 });
 
-// ========== Chapter images (bulk fetch + SSE streaming) ==========
+// ========== Chapter images (binary stream, no base64) ==========
 
 const IMG_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const IMG_REFERER = "https://www.baozimh.com/";
 const BZCDN_HOSTS = ["https://s1.bzcdn.net", "https://s2.bzcdn.net"];
 
-function arrayBufferToBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  let binary = "";
-  const chunk = 8192;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
-async function fetchImageAsBase64(url: string): Promise<string | null> {
+async function fetchImageBinary(url: string, signal?: AbortSignal): Promise<{ ct: string; data: ArrayBuffer } | null> {
   const headers = { "User-Agent": IMG_UA, Referer: IMG_REFERER, Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8" };
   let imagePath = "";
   try { imagePath = new URL(url).pathname; } catch { return null; }
 
   async function tryFetch(host: string, timeout: number) {
-    const resp = await fetch(`${host}${imagePath}`, { headers, signal: AbortSignal.timeout(timeout) });
+    const resp = await fetch(`${host}${imagePath}`, { headers, signal: signal || AbortSignal.timeout(timeout) });
     if (!resp.ok || !(resp.headers.get("content-type") || "").startsWith("image/")) throw new Error("bad response");
-    const buf = await resp.arrayBuffer();
     const ct = resp.headers.get("content-type") || "image/jpeg";
-    return `data:${ct};base64,${arrayBufferToBase64(buf)}`;
+    const buf = await resp.arrayBuffer();
+    return { ct, data: buf };
   }
 
   try {
@@ -336,38 +326,60 @@ async function fetchImageAsBase64(url: string): Promise<string | null> {
   } catch {}
 
   try {
-    const resp = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+    const resp = await fetch(url, { headers, signal: signal || AbortSignal.timeout(15000) });
     if (!resp.ok) return null;
     const ct = resp.headers.get("content-type") || "";
     if (!ct.startsWith("image/")) return null;
     const buf = await resp.arrayBuffer();
-    return `data:${ct};base64,${arrayBufferToBase64(buf)}`;
+    return { ct, data: buf };
   } catch {
     return null;
   }
 }
 
+// Binary stream endpoint: length-prefixed image blocks
 api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
-  const urls = c.req.query("urls");
-  if (!urls) return c.json({ error: "missing urls" }, 400);
-  const list = urls.split("|");
+  const { site, comicId, chapterId } = c.req.param();
+  const rawImages = await getRegistry().getChapterImages(site, comicId, {
+    id: chapterId,
+    url: c.req.query("url") || "",
+    title: c.req.query("title") || "",
+  });
 
-  return streamSSE(c, async (stream) => {
-    for (let i = 0; i < list.length; i += 5) {
-      const batch = list.slice(i, i + 5);
-      const results = await Promise.allSettled(batch.map(url => fetchImageAsBase64(url)));
-      for (const result of results) {
-        if (result.status === "fulfilled" && result.value) {
-          await stream.writeSSE({ data: JSON.stringify({ image: result.value }) });
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+
+  ;(async () => {
+    for (const url of rawImages) {
+      try {
+        const img = await fetchImageBinary(url);
+        if (!img) {
+          await writer.write(new Uint8Array([0xFF, 0xFF]));
+          continue;
         }
+        const ctEnc = new TextEncoder().encode(img.ct);
+        const ctLen = new Uint8Array(new Uint16Array([ctEnc.length]).buffer);
+        const dataLen = new Uint8Array(new Uint32Array([img.data.byteLength]).buffer);
+        await writer.write(ctLen);
+        await writer.write(ctEnc);
+        await writer.write(dataLen);
+        await writer.write(new Uint8Array(img.data));
+      } catch {
+        await writer.write(new Uint8Array([0xFF, 0xFF]));
       }
     }
-    await stream.writeSSE({ data: JSON.stringify({ done: true }) });
+    await writer.write(new Uint8Array([0xFF, 0xFF]));
+    await writer.close();
+  })();
+
+  return new Response(readable, {
+    headers: { "Content-Type": "application/octet-stream", "Cache-Control": "no-cache" },
   });
 });
 
 api.get("/comics/:site/:comicId/:chapterId", async (c) => {
   const { site, comicId, chapterId } = c.req.param();
+  const streamUrl = `/api/comics/${site}/${comicId}/${chapterId}/stream`;
   try {
     const rawImages = await getRegistry().getChapterImages(site, comicId, {
       id: chapterId,
@@ -376,25 +388,14 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
     });
 
     if (rawImages.length === 0) {
-      return c.json({ id: chapterId, title: c.req.query("title") || "", first: [], total: 0, stream: null });
-    }
-
-    // First 3: fetch immediately with CDN racing
-    const first3 = await Promise.all(rawImages.slice(0, 3).map(url => fetchImageAsBase64(url)));
-
-    // Remaining URLs as pipe-delimited string in query param
-    const remaining = rawImages.slice(3);
-    let streamUrl: string | null = null;
-    if (remaining.length > 0) {
-      streamUrl = `/api/comics/${site}/${comicId}/${chapterId}/stream?urls=${encodeURIComponent(remaining.join("|"))}`;
+      return c.json({ id: chapterId, title: c.req.query("title") || "", images: [], total: 0, streamUrl: null });
     }
 
     return c.json({
       id: chapterId,
       title: c.req.query("title") || "",
-      first: first3.filter(Boolean),
       total: rawImages.length,
-      stream: streamUrl,
+      streamUrl,
     });
   } catch {
     console.error("Chapter images fetch failed");
