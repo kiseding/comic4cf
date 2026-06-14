@@ -1,5 +1,5 @@
 // Comic reader — scroll mode with image viewer
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom";
 import Modal from "../components/Modal";
 import * as api from "../lib/api";
@@ -25,8 +25,6 @@ export default function ReaderPage() {
   const [chIdx, setChIdx] = useState(-1);
   const [failedImages, setFailedImages] = useState<Set<number>>(new Set());
   const [retryTimestamps, setRetryTimestamps] = useState<Record<number, number>>({});
-  const sortedIdsRef = useRef<string[]>([]);
-  const sortedIdxRef = useRef(-1);
   const chIdxRef = useRef(chIdx);
   chIdxRef.current = chIdx;
   const [showHeader, setShowHeader] = useState(true);
@@ -107,24 +105,43 @@ export default function ReaderPage() {
     }).catch(() => {});
   }, [site, comicId, images, loading, chapters, chapterId]);
 
+  function chapterSortId(id: string) {
+    const parts = (id || "").split("_").map(Number);
+    return parts.reduce((acc, n, i) => acc + (n || 0) * Math.pow(10000, parts.length - 1 - i), 0);
+  }
+
+  function nextChapterId(dir: 1 | -1) {
+    const cur = chapters[chIdx];
+    if (!cur) return null;
+    const curKey = chapterSortId(cur.id);
+    let bestId: string | null = null;
+    let bestKey = dir > 0 ? Infinity : -Infinity;
+    for (const ch of chapters) {
+      const k = chapterSortId(ch.id);
+      if (dir > 0 && k > curKey && k < bestKey) { bestKey = k; bestId = ch.id; }
+      if (dir < 0 && k < curKey && k > bestKey) { bestKey = k; bestId = ch.id; }
+    }
+    return bestId;
+  }
+
   const goChapter = useCallback((id: string) => {
     const ch = chapters.find(c => c.id === id);
     if (!ch) return;
     navigate(`/read/${site}/${comicId}/${id}?title=${encodeURIComponent(ch.title)}&url=${encodeURIComponent(ch.url)}`);
   }, [site, comicId, chapters, navigate]);
 
-  // Keyboard navigation (uses refs to avoid re-registration on chapter change)
+  // Keyboard navigation
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (showToc) return;
-      if (e.key === "ArrowLeft" || e.key === "a") { if (sortedIdxRef.current > 0) goChapter(sortedIdsRef.current[sortedIdxRef.current - 1]); }
-      if (e.key === "ArrowRight" || e.key === "d") { if (sortedIdxRef.current >= 0 && sortedIdxRef.current < sortedIdsRef.current.length - 1) goChapter(sortedIdsRef.current[sortedIdxRef.current + 1]); }
+      if (e.key === "ArrowLeft" || e.key === "a") { const id = nextChapterId(-1); if (id) goChapter(id); }
+      if (e.key === "ArrowRight" || e.key === "d") { const id = nextChapterId(1); if (id) goChapter(id); }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [showToc, goChapter]);
+  }, [showToc, chIdx, chapters, goChapter]);
 
-  // Touch swipe for prev/next chapter
+  // Touch swipe
   const touchStart = useRef<{ x: number; y: number; t: number } | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
@@ -137,12 +154,14 @@ export default function ReaderPage() {
     const dy = t.clientY - touchStart.current.y;
     const dt = Date.now() - touchStart.current.t;
     touchStart.current = null;
-    // Horizontal swipe with enough distance and speed
     if (dt < 500 && Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      if (dx < -60 && chIdx < chapters.length - 1) goChapter(sortedIds[sortedIdx + 1]);
-      else if (dx > 60 && chIdx > 0) goChapter(sortedIds[sortedIdx - 1]);
+      const id = nextChapterId(dx < -60 ? 1 : dx > 60 ? -1 : 0);
+      if (id) goChapter(id);
     }
   };
+
+  const hasPrevCh = !!nextChapterId(-1);
+  const hasNextCh = !!nextChapterId(1);
 
   // Scroll to current chapter when TOC opens
   useEffect(() => {
@@ -150,25 +169,6 @@ export default function ReaderPage() {
       requestAnimationFrame(() => tocRef.current?.scrollIntoView({ block: "center" }));
     }
   }, [showToc]);
-
-  // Build sorted order for correct navigation (source order preserved for display)
-  const sortedIds = useMemo(() => {
-    return [...chapters].sort((a, b) => {
-      const ap = (a.id || "").split("_").map(Number);
-      const bp = (b.id || "").split("_").map(Number);
-      for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
-        if ((ap[i] || 0) !== (bp[i] || 0)) return (ap[i] || 0) - (bp[i] || 0);
-      }
-      return 0;
-    }).map(ch => ch.id);
-  }, [chapters]);
-
-  const curChapterId = chapters[chIdx]?.id || "";
-  const sortedIdx = sortedIds.indexOf(curChapterId);
-  sortedIdsRef.current = sortedIds;
-  sortedIdxRef.current = sortedIdx;
-  const hasPrevCh = sortedIdx > 0;
-  const hasNextCh = sortedIdx >= 0 && sortedIdx < sortedIds.length - 1;
 
   // Scroll handler for header show/hide
   useEffect(() => {
@@ -240,10 +240,10 @@ export default function ReaderPage() {
           {chapters.length > 0 && (
             <div className="flex justify-between w-full max-w-[800px] py-6 px-4">
               <button className="btn-ghost text-base min-h-[48px] px-4" disabled={!hasPrevCh}
-                onClick={() => { if (hasPrevCh) goChapter(sortedIds[sortedIdx - 1]); }}>← 上一话</button>
+                onClick={() => { if (hasPrevCh) goChapter(String(nextChapterId(-1) || "")); }}>← 上一话</button>
               <span className="text-sm text-gray-400 self-center">{chIdx + 1}/{chapters.length}</span>
               <button className="btn-ghost text-base min-h-[48px] px-4" disabled={!hasNextCh}
-                onClick={() => { if (hasNextCh) goChapter(sortedIds[sortedIdx + 1]); }}>下一话 →</button>
+                onClick={() => { if (hasNextCh) goChapter(String(nextChapterId(1) || "")); }}>下一话 →</button>
             </div>
           )}
         </div>
