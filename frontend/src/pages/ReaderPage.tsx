@@ -72,18 +72,31 @@ export default function ReaderPage() {
             const resp = await fetch(r.streamUrl!);
             const reader = resp.body!.getReader();
 
+            let buf = new Uint8Array(0);
             async function readExact(n: number): Promise<Uint8Array> {
-              const chunks: Uint8Array[] = [];
-              let remaining = n;
-              while (remaining > 0) {
+              const parts: Uint8Array[] = [];
+              let need = n;
+              if (buf.length > 0) {
+                const take = Math.min(buf.length, need);
+                parts.push(buf.subarray(0, take));
+                need -= take;
+                buf = buf.subarray(take);
+              }
+              while (need > 0) {
                 const { done, value } = await reader.read();
                 if (done) throw new Error("unexpected end of stream");
-                chunks.push(value);
-                remaining -= value.length;
+                if (value.length <= need) {
+                  parts.push(value);
+                  need -= value.length;
+                } else {
+                  parts.push(value.subarray(0, need));
+                  buf = value.subarray(need);
+                  need = 0;
+                }
               }
               const all = new Uint8Array(n);
-              let offset = 0;
-              for (const c of chunks) { all.set(c, offset); offset += c.length; }
+              let off = 0;
+              for (const p of parts) { all.set(p, off); off += p.length; }
               return all;
             }
 
