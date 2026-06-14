@@ -142,6 +142,15 @@ export class BaoziManhuaSource implements SiteSource {
       chapters.push({ id, title: name, url: abs, order: chapters.length + 1 });
     }
     chapters.forEach((c, i) => { c.order = i + 1; });
+    // Sort by section_chapter tuple so navigation direction is correct
+    chapters.sort((a, b) => {
+      const ap = (a.id || "").split("_").map(Number);
+      const bp = (b.id || "").split("_").map(Number);
+      for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
+        if ((ap[i] || 0) !== (bp[i] || 0)) return (ap[i] || 0) - (bp[i] || 0);
+      }
+      return 0;
+    });
 
     return {
       site: this.key,
