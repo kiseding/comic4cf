@@ -92,13 +92,19 @@ export default function ReaderPage() {
     if (chapters.length) setChIdx(chapters.findIndex(ch => ch.id === chapterId));
   }, [chapters, chapterId]);
 
-  // Preload next chapter
+  // Preload next chapter — fetch API + preload first 5 images
   useEffect(() => {
     if (!site || !comicId || images.length === 0 || loading) return;
     const idx = chapters.findIndex(ch => ch.id === chapterId);
     const next = chapters[idx + 1];
     if (!next) return;
-    api.getChapterImages(site, comicId, next.id, next.title, next.url).catch(() => {});
+    api.getChapterImages(site, comicId, next.id, next.title, next.url).then(r => {
+      // Preload first 5 actual images so they're in browser cache
+      r.images.slice(0, 5).forEach(url => {
+        const img = new Image();
+        img.src = url;
+      });
+    }).catch(() => {});
   }, [site, comicId, images, loading, chapters, chapterId]);
 
   const goChapter = useCallback((idx: number) => {
