@@ -25,8 +25,6 @@ export default function ReaderPage() {
   const [chIdx, setChIdx] = useState(-1);
   const [failedImages, setFailedImages] = useState<Set<number>>(new Set());
   const [retryTimestamps, setRetryTimestamps] = useState<Record<number, number>>({});
-  const chIdxRef = useRef(chIdx);
-  chIdxRef.current = chIdx;
   const [showHeader, setShowHeader] = useState(true);
   const lastScrollTop = useRef(0);
   // Chapter image cache for instant back-navigation
