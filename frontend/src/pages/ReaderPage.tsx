@@ -86,7 +86,8 @@ export default function ReaderPage() {
     api.getChapterImages(site, comicId, chapterId, chapterTitle, chapterUrl)
       .then(r => {
         if (stale) return;
-        const initialImages = r.first || [];
+        // Support both new (first+stream) and old (images) API format
+        const initialImages = r.first || (r.images || []);
         prevImages.current = initialImages;
         prevTitle.current = r.title;
         setImages(initialImages); setTitle(r.title);
@@ -94,7 +95,6 @@ export default function ReaderPage() {
         requestAnimationFrame(() => {
           if (scrollRef.current) scrollRef.current.scrollTop = 0;
         });
-        // Stream remaining images, cache only when stream completes
         if (r.stream && r.total && r.total > initialImages.length) {
           const acc = [...initialImages];
           fetchStream(r.stream, (image) => {
@@ -104,8 +104,7 @@ export default function ReaderPage() {
             chapterCacheRef.current.set(cacheKey, { images: acc, title: r.title });
             prevImages.current = acc;
           });
-        } else {
-          // No remaining — cache immediately
+        } else if (initialImages.length > 0) {
           chapterCacheRef.current.set(cacheKey, { images: initialImages, title: r.title });
         }
       })
