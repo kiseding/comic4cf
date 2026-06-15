@@ -356,25 +356,24 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
   const writer = writable.getWriter();
 
   (async () => {
-    for (const url of rawImages) {
-      try {
-        const img = await fetchImageBinary(url);
-        if (!img) {
-          await writer.write(new Uint8Array([0xFF, 0xFF]));
-          continue;
-        }
-        const ctEnc = new TextEncoder().encode(img.ct);
-        const ctLen = new Uint8Array(new Uint16Array([ctEnc.length]).buffer);
-        const dataLen = new Uint8Array(new Uint32Array([img.data.byteLength]).buffer);
-        await writer.write(ctLen);
-        await writer.write(ctEnc);
-        await writer.write(dataLen);
-        await writer.write(new Uint8Array(img.data));
-      } catch {
-        await writer.write(new Uint8Array([0xFF, 0xFF]));
+    const results = await Promise.all(rawImages.map(url =>
+      fetchImageBinary(url).catch(() => null)
+    ));
+    const term = new Uint8Array([0xFF, 0xFF]);
+    for (const img of results) {
+      if (!img) {
+        await writer.write(term);
+        continue;
       }
+      const ctEnc = new TextEncoder().encode(img.ct);
+      const ctLen = new Uint8Array(new Uint16Array([ctEnc.length]).buffer);
+      const dataLen = new Uint8Array(new Uint32Array([img.data.byteLength]).buffer);
+      await writer.write(ctLen);
+      await writer.write(ctEnc);
+      await writer.write(dataLen);
+      await writer.write(new Uint8Array(img.data));
     }
-    await writer.write(new Uint8Array([0xFF, 0xFF]));
+    await writer.write(term);
     await writer.close();
   })();
 
