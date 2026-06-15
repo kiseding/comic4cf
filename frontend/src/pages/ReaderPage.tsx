@@ -4,7 +4,7 @@ import Modal from "../components/Modal";
 import * as api from "../lib/api";
 import type { ComicDetail } from "../lib/api";
 
-const FIRST_BATCH = 5;
+const SLIDE = 3;
 
 export default function ReaderPage() {
   const { site, comicId, chapterId } = useParams<{ site: string; comicId: string; chapterId: string }>();
@@ -43,24 +43,14 @@ export default function ReaderPage() {
 
   const recordedRef = useRef<string | null>(null);
 
-  // Batch loading: first 5, then all remaining in parallel
-  const [batchEnd, setBatchEnd] = useState(0);
-  const loadedCount = useRef(0);
-  const batchDone = useRef(false);
+  // Sliding window: always keep 3 images loading ahead of displayed
+  const [loadedCount, setLoadedCount] = useState(0);
+  const windowEnd = Math.min(loadedCount + SLIDE, images.length);
 
-  const resetBatch = (len: number) => {
-    loadedCount.current = 0;
-    batchDone.current = false;
-    setBatchEnd(Math.min(FIRST_BATCH, len) || 0);
-  };
+  useEffect(() => { setLoadedCount(0); }, [images]);
 
   const handleLoad = () => {
-    if (batchDone.current) return;
-    loadedCount.current++;
-    if (loadedCount.current >= FIRST_BATCH || loadedCount.current >= images.length) {
-      batchDone.current = true;
-      setBatchEnd(images.length);
-    }
+    setLoadedCount(prev => Math.min(prev + 1, images.length));
   };
 
   // Fetch chapter images
@@ -74,7 +64,6 @@ export default function ReaderPage() {
       prevImages.current = cached.images;
       prevTitle.current = cached.title;
       setImages(cached.images);
-      resetBatch(cached.images.length);
       setTitle(cached.title);
       setLoading(false);
       requestAnimationFrame(() => {
@@ -104,7 +93,6 @@ export default function ReaderPage() {
           return;
         }
         setImages(r.images);
-        resetBatch(r.images.length);
         prevImages.current = r.images;
         setLoading(false);
         setCache(cacheKey, { images: r.images, title: r.title });
@@ -237,8 +225,6 @@ export default function ReaderPage() {
   if (error) return <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex items-center justify-center"><div className="text-center"><p className="text-red-500 mb-4">{error}</p><button onClick={() => navigate(-1)} className="btn-ghost min-h-[44px]">返回</button></div></div>;
 
   const displayTitle = title || prevTitle.current;
-  const visibleImages = images.slice(0, batchEnd);
-  const hasMore = batchEnd < images.length;
 
   return (
     <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
@@ -250,7 +236,7 @@ export default function ReaderPage() {
           <button onClick={() => setShowToc(true)} className="text-base text-[#6366f1] hover:underline whitespace-nowrap min-h-[44px] flex items-center">{chIdx + 1}/{chapters.length} 目录</button>
         </div>
         <div className="flex flex-col items-center">
-          {visibleImages.map((url, i) => (
+          {images.slice(0, windowEnd).map((url, i) => (
             <img
               key={i}
               src={url}
@@ -263,22 +249,14 @@ export default function ReaderPage() {
               onError={handleLoad}
             />
           ))}
-          {visibleImages.length === 0 && !loading && (
+          {images.length === 0 && !loading && (
             <div className="text-center py-16 text-gray-500">
               <p className="mb-4">该章节暂无图片</p>
               <button className="btn-ghost" onClick={() => navigate(-1)}>返回</button>
             </div>
           )}
-          {hasMore && (
-            <div className="flex items-center justify-center py-8 w-full">
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-[#6366f1] border-t-transparent" />
-                <span>加载更多...</span>
-              </div>
-            </div>
-          )}
 
-          {chapters.length > 0 && !hasMore && (
+          {chapters.length > 0 && (
             <div className="flex justify-between w-full max-w-[800px] py-6 px-4">
               <button className="btn-ghost text-base min-h-[48px] px-4" disabled={!hasPrevCh}
                 onClick={() => { if (hasPrevCh) goChapter(nextChapterId(-1) || ""); }}>← 上一话</button>
