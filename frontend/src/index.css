@@ -133,3 +133,8 @@ html { background: var(--bg); color: var(--t); }
 
   .skeleton { @apply animate-pulse rounded-lg; background: var(--b); }
 }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

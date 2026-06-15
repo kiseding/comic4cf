@@ -4,7 +4,7 @@ import Modal from "../components/Modal";
 import * as api from "../lib/api";
 import type { ComicDetail } from "../lib/api";
 
-const BATCH = 3;
+const FIRST_BATCH = 5;
 
 export default function ReaderPage() {
   const { site, comicId, chapterId } = useParams<{ site: string; comicId: string; chapterId: string }>();
@@ -43,22 +43,25 @@ export default function ReaderPage() {
 
   const recordedRef = useRef<string | null>(null);
 
-  // Batch loading: only render images[0..batchEnd)
+  // Batch loading: first 5, then all remaining in parallel
   const [batchEnd, setBatchEnd] = useState(0);
   const loadedCount = useRef(0);
+  const batchDone = useRef(false);
 
   useEffect(() => {
     loadedCount.current = 0;
-    setBatchEnd(Math.min(BATCH, images.length) || 0);
+    batchDone.current = false;
+    setBatchEnd(Math.min(FIRST_BATCH, images.length) || 0);
   }, [images]);
 
-  const handleBatch = (() => {
+  const handleLoad = () => {
+    if (batchDone.current) return;
     loadedCount.current++;
-    if (loadedCount.current % BATCH === 0) {
-      const next = Math.min(loadedCount.current + BATCH, images.length);
-      if (next > batchEnd) setBatchEnd(next);
+    if (loadedCount.current >= FIRST_BATCH || loadedCount.current >= images.length) {
+      batchDone.current = true;
+      setBatchEnd(images.length);
     }
-  });
+  };
 
   // Fetch chapter images
   useEffect(() => {
@@ -253,8 +256,9 @@ export default function ReaderPage() {
               className="w-full max-w-[800px]"
               decoding="async"
               fetchPriority={i < 2 ? "high" : "auto"}
-              onLoad={handleBatch}
-              onError={handleBatch}
+              style={{ animation: 'fadeIn 0.3s ease' }}
+              onLoad={handleLoad}
+              onError={handleLoad}
             />
           ))}
           {visibleImages.length === 0 && !loading && (
