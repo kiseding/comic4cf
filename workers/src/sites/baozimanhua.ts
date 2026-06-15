@@ -5,11 +5,17 @@ import { fetchHTML, parseHTML, absolutizeURL, cleanText } from "../utils/http";
 
 const MIRRORS = [
   "www.baozimh.com",
-  "cn.baozimh.com",
-  "tw.baozimh.com",
+  "baozimh.com",
+  "www.baozimh.net",
+  "baozimh.net",
+  "www.baozimh.cc",
   "www.webmota.com",
+  "webmota.com",
+  "tw.webmota.com",
   "www.kukuc.co",
+  "tw.kukuc.co",
   "www.twmanga.com",
+  "tw.twmanga.com",
 ];
 const PRIMARY = "https://www.baozimh.com";
 // Search must hit baozimh.com directly (other mirrors don't host /search).
@@ -167,7 +173,7 @@ export class BaoziManhuaSource implements SiteSource {
       const pageImages: string[] = [];
       $(".comic-contain amp-img").each((_, img) => {
         const src = $(img).attr("src") || "";
-        if (src) pageImages.push(src.replace(".baozicdn.com", ".baozimh.com"));
+        if (src) pageImages.push(src.replace("bzcdn.net", "baozicdn.com"));
       });
       const nextEl = $("#next-chapter").first();
       const nextText = cleanText(nextEl.text());

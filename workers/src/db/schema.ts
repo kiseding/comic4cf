@@ -20,7 +20,6 @@ export async function initSchema(db: D1Database): Promise<void> {
     cover_url TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
     source_url TEXT NOT NULL DEFAULT '',
-    latest_chapter TEXT NOT NULL DEFAULT '',
     chapter_index INTEGER NOT NULL DEFAULT 0,
     chapter_id TEXT NOT NULL DEFAULT '',
     chapter_title TEXT NOT NULL DEFAULT '',
@@ -64,7 +63,6 @@ export interface BookshelfRow {
   cover_url: string;
   description: string;
   source_url: string;
-  latest_chapter: string;
   chapter_index: number;
   chapter_id: string;
   chapter_title: string;

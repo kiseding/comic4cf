@@ -297,93 +297,12 @@ api.get("/comics/:site/:comicId", async (c) => {
   if (cached) return c.json(cached);
   try {
     const detail = await getRegistry().getComicDetail(site, comicId);
-      const response = { ...detail };
-    if (c.env.CACHE) { c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify(response), { expirationTtl: 600 })); }
-    return c.json(response);
+    if (c.env.CACHE) { c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify(detail), { expirationTtl: 600 })); }
+    return c.json(detail);
   } catch { console.error("Comic detail fetch failed"); return c.json({ error: "服务暂时不可用" }, 502); }
 });
 
-// ========== Chapter images (binary stream, no base64) ==========
-
-const IMG_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-const IMG_REFERER = "https://www.baozimh.com/";
-const BZCDN_HOSTS = ["https://s1.bzcdn.net", "https://s2.bzcdn.net"];
-
-async function fetchImageBinary(url: string, signal?: AbortSignal): Promise<{ ct: string; data: ArrayBuffer } | null> {
-  const headers = { "User-Agent": IMG_UA, Referer: IMG_REFERER, Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8" };
-  let imagePath = "";
-  try { imagePath = new URL(url).pathname; } catch { return null; }
-
-  async function tryFetch(host: string, timeout: number) {
-    const resp = await fetch(`${host}${imagePath}`, { headers, signal: signal || AbortSignal.timeout(timeout) });
-    if (!resp.ok || !(resp.headers.get("content-type") || "").startsWith("image/")) throw new Error("bad response");
-    const ct = resp.headers.get("content-type") || "image/jpeg";
-    const buf = await resp.arrayBuffer();
-    return { ct, data: buf };
-  }
-
-  try {
-    return await Promise.any(BZCDN_HOSTS.map(h => tryFetch(h, 5000)));
-  } catch {}
-
-  try {
-    const resp = await fetch(url, { headers, signal: signal || AbortSignal.timeout(15000) });
-    if (!resp.ok) return null;
-    const ct = resp.headers.get("content-type") || "";
-    if (!ct.startsWith("image/")) return null;
-    const buf = await resp.arrayBuffer();
-    return { ct, data: buf };
-  } catch {
-    return null;
-  }
-}
-
-// Binary stream endpoint: length-prefixed image blocks
-api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
-  const urlsParam = c.req.query("urls");
-  let rawImages: string[];
-
-  if (urlsParam) {
-    rawImages = urlsParam.split("|");
-  } else {
-    const { site, comicId, chapterId } = c.req.param();
-    rawImages = (await getRegistry().getChapterImages(site, comicId, {
-      id: chapterId,
-      url: c.req.query("url") || "",
-      title: c.req.query("title") || "",
-    }));
-  }
-
-  const { readable, writable } = new TransformStream();
-  const writer = writable.getWriter();
-
-  ;(async () => {
-    for (const url of rawImages) {
-      try {
-        const img = await fetchImageBinary(url);
-        if (!img) {
-          await writer.write(new Uint8Array([0xFF, 0xFF]));
-          continue;
-        }
-        const ctEnc = new TextEncoder().encode(img.ct);
-        const ctLen = new Uint8Array(new Uint16Array([ctEnc.length]).buffer);
-        const dataLen = new Uint8Array(new Uint32Array([img.data.byteLength]).buffer);
-        await writer.write(ctLen);
-        await writer.write(ctEnc);
-        await writer.write(dataLen);
-        await writer.write(new Uint8Array(img.data));
-      } catch {
-        await writer.write(new Uint8Array([0xFF, 0xFF]));
-      }
-    }
-    await writer.write(new Uint8Array([0xFF, 0xFF]));
-    await writer.close();
-  })();
-
-  return new Response(readable, {
-    headers: { "Content-Type": "application/octet-stream", "Cache-Control": "no-cache" },
-  });
-});
+// ========== Chapter images ==========
 
 api.get("/comics/:site/:comicId/:chapterId", async (c) => {
   const { site, comicId, chapterId } = c.req.param();
@@ -394,18 +313,11 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
       title: c.req.query("title") || "",
     });
 
-    if (rawImages.length === 0) {
-      return c.json({ id: chapterId, title: c.req.query("title") || "", total: 0, streamUrl: null });
-    }
-
-    const encoded = encodeURIComponent(rawImages.join("|"));
-    const streamUrl = `/api/comics/${site}/${comicId}/${chapterId}/stream?urls=${encoded}`;
-
     return c.json({
       id: chapterId,
       title: c.req.query("title") || "",
       total: rawImages.length,
-      streamUrl,
+      images: rawImages,
     });
   } catch {
     console.error("Chapter images fetch failed");

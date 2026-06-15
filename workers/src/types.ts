@@ -52,20 +52,3 @@ export interface SiteSource {
   getCategoryBooks?(tag: string): Promise<SearchResult[]>;
 }
 
-export interface BookshelfItem {
-  id: number;
-  user_id: number;
-  site: string;
-  comic_id: string;
-  title: string;
-  author: string;
-  cover_url: string;
-  description: string;
-  source_url: string;
-  latest_chapter: string;
-  chapter_index: number;
-  chapter_id: string;
-  chapter_title: string;
-  created_at: string;
-  updated_at: string;
-}

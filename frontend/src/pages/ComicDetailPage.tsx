@@ -106,7 +106,7 @@ export default function ComicDetailPage() {
               return (
                 <button
                   className="btn-primary text-xs px-4 min-h-[44px]"
-                  onClick={() => navigate(`/read/${site}/${comicId}/${target.id}?title=${encodeURIComponent(target.title)}&url=${encodeURIComponent(target.url || "")}`)}
+                  onClick={() => navigate(`/read/${site}/${comicId}/${target.id}?comicTitle=${encodeURIComponent(comic.title)}&title=${encodeURIComponent(target.title)}&url=${encodeURIComponent(target.url || "")}`)}
                 >
                   {target.label}
                 </button>
@@ -126,7 +126,7 @@ export default function ComicDetailPage() {
       <h2 className="text-sm font-medium mb-3">目录</h2>
       <div className="space-y-0.5">
         {comic.chapters.map(ch => (
-          <Link key={ch.id} to={`/read/${site}/${comicId}/${ch.id}?title=${encodeURIComponent(ch.title)}&url=${encodeURIComponent(ch.url || "")}`}
+          <Link key={ch.id} to={`/read/${site}/${comicId}/${ch.id}?comicTitle=${encodeURIComponent(comic.title)}&title=${encodeURIComponent(ch.title)}&url=${encodeURIComponent(ch.url || "")}`}
             className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors min-h-[44px]">
             <span className="line-clamp-1 flex-1">{ch.title}</span>
             <span className="text-[10px] text-gray-400 shrink-0 ml-2">{ch.order}</span>

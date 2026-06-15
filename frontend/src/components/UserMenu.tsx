@@ -36,7 +36,7 @@ export default function UserMenu() {
             <button onClick={() => { setOpen(false); setModal("pw"); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 min-h-[44px]">修改密码</button>
             {user.isAdmin && <button onClick={() => { setOpen(false); setModal("admin"); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 min-h-[44px]">用户管理</button>}
             <button onClick={() => { setOpen(false); const cur = getTheme(); const next = cur === "auto" ? "dark" : cur === "dark" ? "light" : "auto"; applyTheme(next); }}
-              className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 min-h-[44px]">主题: {({"auto":"自动","dark":"暗色","light":"浅色"} as Record<string,string>)[getTheme()]}</button>
+              className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 min-h-[44px]">主题: {({"auto":"自动","dark":"暗色","light":"浅色"})[getTheme()]}</button>
             <hr className="my-1 border-gray-100 dark:border-gray-700" />
             <button onClick={() => { setOpen(false); setModal("logout"); }} className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-gray-50 dark:hover:bg-gray-700 min-h-[44px]">退出</button>
           </div>
