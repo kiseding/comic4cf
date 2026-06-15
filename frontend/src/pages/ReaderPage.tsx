@@ -54,6 +54,7 @@ export default function ReaderPage() {
       setImages(cached.images);
       setTitle(cached.title);
       setLoading(false);
+      setLoadedSet(new Set());
       requestAnimationFrame(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = 0;
       });
@@ -108,7 +109,12 @@ export default function ReaderPage() {
     if (chapters.length) setChIdx(chapters.findIndex(ch => ch.id === chapterId));
   }, [chapters, chapterId]);
 
-  // Preload next chapter
+  // Ordered display: track which images have loaded
+  const [loadedSet, setLoadedSet] = useState<Set<number>>(new Set());
+  useEffect(() => { setLoadedSet(new Set()); }, [images]);
+  const displayCount = (() => { let i = 0; while (loadedSet.has(i)) i++; return i; })();
+
+  // Preload next chapter — cancelled on chapter change
   useEffect(() => {
     if (!site || !comicId || images.length === 0 || loading) return;
     const nextId = nextChapterId(1);
@@ -118,14 +124,15 @@ export default function ReaderPage() {
     const cacheKey = `${site}/${comicId}/${nextId}`;
     if (chapterCacheRef.current.has(cacheKey)) return;
 
+    let stale = false;
     api.getChapterImages(site, comicId, next.id, next.title, next.url)
       .then(r => {
-        if (r.images && r.images.length) {
-          setCache(cacheKey, { images: r.images, title: next.title });
-        }
+        if (stale || !r.images || !r.images.length) return;
+        setCache(cacheKey, { images: r.images, title: next.title });
       })
       .catch(() => {});
-  }, [site, comicId, images, loading, chIdx, chapters]);
+    return () => { stale = true; };
+  }, [site, comicId, images, loading, chIdx, chapters, chapterId]);
 
   function chapterSortId(id: string) {
     const parts = (id || "").split("_").map(Number);
@@ -211,7 +218,6 @@ export default function ReaderPage() {
   if (loading && prevImages.current.length === 0) return <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-2 border-[#6366f1] border-t-transparent" /></div>;
   if (error) return <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex items-center justify-center"><div className="text-center"><p className="text-red-500 mb-4">{error}</p><button onClick={() => navigate(-1)} className="btn-ghost min-h-[44px]">返回</button></div></div>;
 
-  const displayImages = images.length > 0 ? images : prevImages.current;
   const displayTitle = title || prevTitle.current;
 
   return (
@@ -224,17 +230,23 @@ export default function ReaderPage() {
           <button onClick={() => setShowToc(true)} className="text-base text-[#6366f1] hover:underline whitespace-nowrap min-h-[44px] flex items-center">{chIdx + 1}/{chapters.length} 目录</button>
         </div>
         <div className="flex flex-col items-center">
-          {displayImages.map((url, i) => (
+          {images.map((url, i) => (
             <img
               key={i}
               src={url}
               alt={`Page ${i + 1}`}
-              className="w-full max-w-[800px]"
+              className={`w-full max-w-[800px] ${i < displayCount ? '' : 'invisible h-0 overflow-hidden'}`}
               decoding="async"
               fetchPriority={i < 2 ? "high" : "auto"}
+              onLoad={() => setLoadedSet(prev => prev.has(i) ? prev : new Set(prev).add(i))}
             />
           ))}
-          {displayImages.length === 0 && !loading && (
+          {displayCount === 0 && images.length > 0 && !loading && (
+            <div className="flex items-center justify-center py-16">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#6366f1] border-t-transparent" />
+            </div>
+          )}
+          {images.length === 0 && !loading && (
             <div className="text-center py-16 text-gray-500">
               <p className="mb-4">该章节暂无图片</p>
               <button className="btn-ghost" onClick={() => navigate(-1)}>返回</button>
