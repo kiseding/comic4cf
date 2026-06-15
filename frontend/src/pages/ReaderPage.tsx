@@ -120,7 +120,7 @@ export default function ReaderPage() {
     if (chapters.length) setChIdx(chapters.findIndex(ch => ch.id === chapterId));
   }, [chapters, chapterId]);
 
-  // Preload next chapter — cancelled on chapter change
+  // Preload next chapter — cache URLs + pre-download all images in parallel
   useEffect(() => {
     if (!site || !comicId || images.length === 0 || loading) return;
     const nextId = nextChapterId(1);
@@ -135,6 +135,7 @@ export default function ReaderPage() {
       .then(r => {
         if (stale || !r.images || !r.images.length) return;
         setCache(cacheKey, { images: r.images, title: next.title });
+        r.images.forEach(url => { const img = new Image(); img.src = url; });
       })
       .catch(() => {});
     return () => { stale = true; };
