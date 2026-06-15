@@ -41,13 +41,14 @@ export default function ReaderPage() {
 
   const recordedRef = useRef<string | null>(null);
 
-  // Sequential: load one image at a time, all bandwidth to one
+  // Sliding window: always keep 2 images loading ahead
   const [loadedCount, setLoadedCount] = useState(0);
+  const windowEnd = Math.min(loadedCount + 2, images.length);
 
   useEffect(() => { setLoadedCount(0); }, [images]);
 
   const handleLoad = () => {
-    setLoadedCount(prev => prev + 1);
+    setLoadedCount(prev => Math.min(prev + 1, images.length));
   };
 
   // Fetch chapter images
@@ -234,17 +235,17 @@ export default function ReaderPage() {
           <button onClick={() => setShowToc(true)} className="text-base text-[#6366f1] hover:underline whitespace-nowrap min-h-[44px] flex items-center">{chIdx + 1}/{chapters.length} 目录</button>
         </div>
         <div className="flex flex-col items-center">
-          {images.slice(0, loadedCount + 1).map((url, i) => (
+          {images.slice(0, windowEnd).map((url, i) => (
             <img
               key={i}
               src={url}
               alt={`Page ${i + 1}`}
               className="w-full max-w-[800px]"
               decoding="async"
-              fetchPriority={i === loadedCount ? "high" : "auto"}
+              fetchPriority={i < 2 ? "high" : "auto"}
               style={{ animation: 'fadeIn 0.3s ease' }}
-              onLoad={i === loadedCount ? handleLoad : undefined}
-              onError={i === loadedCount ? handleLoad : undefined}
+              onLoad={handleLoad}
+              onError={handleLoad}
             />
           ))}
           {images.length === 0 && !loading && (
