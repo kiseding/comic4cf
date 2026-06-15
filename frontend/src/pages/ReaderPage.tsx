@@ -54,7 +54,6 @@ export default function ReaderPage() {
       setImages(cached.images);
       setTitle(cached.title);
       setLoading(false);
-      setLoadedSet(new Set());
       requestAnimationFrame(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = 0;
       });
@@ -108,11 +107,6 @@ export default function ReaderPage() {
   useEffect(() => {
     if (chapters.length) setChIdx(chapters.findIndex(ch => ch.id === chapterId));
   }, [chapters, chapterId]);
-
-  // Ordered display: track which images have loaded
-  const [loadedSet, setLoadedSet] = useState<Set<number>>(new Set());
-  useEffect(() => { setLoadedSet(new Set()); }, [images]);
-  const displayCount = (() => { let i = 0; while (loadedSet.has(i)) i++; return i; })();
 
   // Preload next chapter — cancelled on chapter change
   useEffect(() => {
@@ -235,17 +229,11 @@ export default function ReaderPage() {
               key={i}
               src={url}
               alt={`Page ${i + 1}`}
-              className={`w-full max-w-[800px] ${i < displayCount ? '' : 'invisible h-0 overflow-hidden'}`}
+              className="w-full max-w-[800px]"
               decoding="async"
               fetchPriority={i < 2 ? "high" : "auto"}
-              onLoad={() => setLoadedSet(prev => prev.has(i) ? prev : new Set(prev).add(i))}
             />
           ))}
-          {displayCount === 0 && images.length > 0 && !loading && (
-            <div className="flex items-center justify-center py-16">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#6366f1] border-t-transparent" />
-            </div>
-          )}
           {images.length === 0 && !loading && (
             <div className="text-center py-16 text-gray-500">
               <p className="mb-4">该章节暂无图片</p>
