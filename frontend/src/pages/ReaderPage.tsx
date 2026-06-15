@@ -52,13 +52,13 @@ export default function ReaderPage() {
     setBatchEnd(Math.min(BATCH, images.length) || 0);
   }, [images]);
 
-  const handleBatch = () => {
+  const handleBatch = (() => {
     loadedCount.current++;
     if (loadedCount.current % BATCH === 0) {
       const next = Math.min(loadedCount.current + BATCH, images.length);
       if (next > batchEnd) setBatchEnd(next);
     }
-  };
+  });
 
   // Fetch chapter images
   useEffect(() => {
@@ -256,7 +256,7 @@ export default function ReaderPage() {
               onLoad={handleBatch}
               onError={handleBatch}
             />
-          )}
+          ))}
           {visibleImages.length === 0 && !loading && (
             <div className="text-center py-16 text-gray-500">
               <p className="mb-4">该章节暂无图片</p>
