@@ -4,8 +4,6 @@ import Modal from "../components/Modal";
 import * as api from "../lib/api";
 import type { ComicDetail } from "../lib/api";
 
-const SLIDE = 3;
-
 export default function ReaderPage() {
   const { site, comicId, chapterId } = useParams<{ site: string; comicId: string; chapterId: string }>();
   const [searchParams] = useSearchParams();
@@ -43,14 +41,13 @@ export default function ReaderPage() {
 
   const recordedRef = useRef<string | null>(null);
 
-  // Sliding window: always keep 3 images loading ahead of displayed
+  // Sequential: load one image at a time, all bandwidth to one
   const [loadedCount, setLoadedCount] = useState(0);
-  const windowEnd = Math.min(loadedCount + SLIDE, images.length);
 
   useEffect(() => { setLoadedCount(0); }, [images]);
 
   const handleLoad = () => {
-    setLoadedCount(prev => Math.min(prev + 1, images.length));
+    setLoadedCount(prev => prev + 1);
   };
 
   // Fetch chapter images
@@ -237,17 +234,17 @@ export default function ReaderPage() {
           <button onClick={() => setShowToc(true)} className="text-base text-[#6366f1] hover:underline whitespace-nowrap min-h-[44px] flex items-center">{chIdx + 1}/{chapters.length} 目录</button>
         </div>
         <div className="flex flex-col items-center">
-          {images.slice(0, windowEnd).map((url, i) => (
+          {images.slice(0, loadedCount + 1).map((url, i) => (
             <img
               key={i}
               src={url}
               alt={`Page ${i + 1}`}
               className="w-full max-w-[800px]"
               decoding="async"
-              fetchPriority={i < 2 ? "high" : "auto"}
+              fetchPriority={i === loadedCount ? "high" : "auto"}
               style={{ animation: 'fadeIn 0.3s ease' }}
-              onLoad={handleLoad}
-              onError={handleLoad}
+              onLoad={i === loadedCount ? handleLoad : undefined}
+              onError={i === loadedCount ? handleLoad : undefined}
             />
           ))}
           {images.length === 0 && !loading && (
