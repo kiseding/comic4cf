@@ -48,11 +48,11 @@ export default function ReaderPage() {
   const loadedCount = useRef(0);
   const batchDone = useRef(false);
 
-  useEffect(() => {
+  const resetBatch = (len: number) => {
     loadedCount.current = 0;
     batchDone.current = false;
-    setBatchEnd(Math.min(FIRST_BATCH, images.length) || 0);
-  }, [images]);
+    setBatchEnd(Math.min(FIRST_BATCH, len) || 0);
+  };
 
   const handleLoad = () => {
     if (batchDone.current) return;
@@ -74,6 +74,7 @@ export default function ReaderPage() {
       prevImages.current = cached.images;
       prevTitle.current = cached.title;
       setImages(cached.images);
+      resetBatch(cached.images.length);
       setTitle(cached.title);
       setLoading(false);
       requestAnimationFrame(() => {
@@ -103,6 +104,7 @@ export default function ReaderPage() {
           return;
         }
         setImages(r.images);
+        resetBatch(r.images.length);
         prevImages.current = r.images;
         setLoading(false);
         setCache(cacheKey, { images: r.images, title: r.title });
