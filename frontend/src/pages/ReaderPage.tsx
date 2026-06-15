@@ -4,6 +4,8 @@ import Modal from "../components/Modal";
 import * as api from "../lib/api";
 import type { ComicDetail } from "../lib/api";
 
+const BATCH = 3;
+
 export default function ReaderPage() {
   const { site, comicId, chapterId } = useParams<{ site: string; comicId: string; chapterId: string }>();
   const [searchParams] = useSearchParams();
@@ -41,7 +43,24 @@ export default function ReaderPage() {
 
   const recordedRef = useRef<string | null>(null);
 
-  // Fetch chapter images — direct CDN URLs, no proxy
+  // Batch loading: only render images[0..batchEnd)
+  const [batchEnd, setBatchEnd] = useState(0);
+  const loadedCount = useRef(0);
+
+  useEffect(() => {
+    loadedCount.current = 0;
+    setBatchEnd(Math.min(BATCH, images.length) || 0);
+  }, [images]);
+
+  const handleBatch = () => {
+    loadedCount.current++;
+    if (loadedCount.current % BATCH === 0) {
+      const next = Math.min(loadedCount.current + BATCH, images.length);
+      if (next > batchEnd) setBatchEnd(next);
+    }
+  };
+
+  // Fetch chapter images
   useEffect(() => {
     if (!site || !comicId || !chapterId) return;
     let stale = false;
@@ -213,6 +232,8 @@ export default function ReaderPage() {
   if (error) return <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex items-center justify-center"><div className="text-center"><p className="text-red-500 mb-4">{error}</p><button onClick={() => navigate(-1)} className="btn-ghost min-h-[44px]">返回</button></div></div>;
 
   const displayTitle = title || prevTitle.current;
+  const visibleImages = images.slice(0, batchEnd);
+  const hasMore = batchEnd < images.length;
 
   return (
     <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
@@ -224,7 +245,7 @@ export default function ReaderPage() {
           <button onClick={() => setShowToc(true)} className="text-base text-[#6366f1] hover:underline whitespace-nowrap min-h-[44px] flex items-center">{chIdx + 1}/{chapters.length} 目录</button>
         </div>
         <div className="flex flex-col items-center">
-          {images.map((url, i) => (
+          {visibleImages.map((url, i) => (
             <img
               key={i}
               src={url}
@@ -232,16 +253,26 @@ export default function ReaderPage() {
               className="w-full max-w-[800px]"
               decoding="async"
               fetchPriority={i < 2 ? "high" : "auto"}
+              onLoad={handleBatch}
+              onError={handleBatch}
             />
-          ))}
-          {images.length === 0 && !loading && (
+          )}
+          {visibleImages.length === 0 && !loading && (
             <div className="text-center py-16 text-gray-500">
               <p className="mb-4">该章节暂无图片</p>
               <button className="btn-ghost" onClick={() => navigate(-1)}>返回</button>
             </div>
           )}
+          {hasMore && (
+            <div className="flex items-center justify-center py-8 w-full">
+              <div className="flex items-center gap-2 text-sm text-gray-400">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-[#6366f1] border-t-transparent" />
+                <span>加载更多...</span>
+              </div>
+            </div>
+          )}
 
-          {chapters.length > 0 && (
+          {chapters.length > 0 && !hasMore && (
             <div className="flex justify-between w-full max-w-[800px] py-6 px-4">
               <button className="btn-ghost text-base min-h-[48px] px-4" disabled={!hasPrevCh}
                 onClick={() => { if (hasPrevCh) goChapter(nextChapterId(-1) || ""); }}>← 上一话</button>
