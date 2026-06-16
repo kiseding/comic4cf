@@ -18,11 +18,13 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - run: npx tsc --noEmit
+        working-directory: workers
       - name: Inject bindings
         working-directory: workers
         run: |
-          sed -i "s/D1_DATABASE_ID/${{ secrets.D1_DATABASE_ID }}/" wrangler.toml
-          sed -i "s/KV_NAMESPACE_ID/${{ secrets.KV_NAMESPACE_ID }}/" wrangler.toml
+          sed -i "s|D1_DATABASE_ID|${{ secrets.D1_DATABASE_ID }}|" wrangler.toml
+          sed -i "s|KV_NAMESPACE_ID|${{ secrets.KV_NAMESPACE_ID }}|" wrangler.toml
       - name: Set JWT secret
         working-directory: workers
         env:
@@ -50,6 +52,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - run: npx tsc --noEmit
+        working-directory: workers
       - name: Build frontend
         working-directory: frontend
         env:

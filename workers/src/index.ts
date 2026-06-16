@@ -10,6 +10,7 @@ type Bindings = {
   CACHE?: KVNamespace;
   JWT_SECRET?: string;
   ALLOWED_ORIGINS?: string;
+  ADMIN_PASSWORD?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -17,7 +18,11 @@ const app = new Hono<{ Bindings: Bindings }>();
 // CORS
 app.use("*", cors({
   origin: (origin, c) => {
-    if (!origin) return "*";
+    if (!origin) {
+      const allowed = (c.env as Bindings).ALLOWED_ORIGINS || "";
+      if (!allowed) return "*";
+      return null;
+    }
     try {
       const u = new URL(origin);
       if (u.hostname === "localhost" || u.hostname.endsWith(".localhost")) return origin;
@@ -26,8 +31,8 @@ app.use("*", cors({
       if (origins.length > 0) {
         return origins.some(o => { try { return u.hostname === new URL(o).hostname; } catch { return false; } }) ? origin : null;
       }
-      return origin; // allow all if ALLOWED_ORIGINS not set
-    } catch { return origin; }
+      return origin;
+    } catch { return null; }
   },
   allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowHeaders: ["Content-Type", "Authorization"],
@@ -51,12 +56,12 @@ app.route("/api", apiRoutes);
 
 // Init DB schema + admin on first request
 let initPromise: Promise<void> | null = null;
-async function ensureInit(db?: D1Database) {
+async function ensureInit(db?: D1Database, adminPassword?: string) {
   if (initPromise) return initPromise;
   if (!db) return;
   initPromise = (async () => {
     await initSchema(db);
-    await ensureAdmin(db);
+    await ensureAdmin(db, adminPassword);
   })().catch((e) => {
     console.error("DB init failed:", e.message);
     initPromise = null;
@@ -67,7 +72,7 @@ async function ensureInit(db?: D1Database) {
 const handler: ExportedHandler<Bindings> = {
   async fetch(request, env, ctx) {
     if (!env.JWT_SECRET) return new Response(JSON.stringify({ error: "JWT_SECRET not configured" }), { status: 500, headers: { "Content-Type": "application/json" } });
-    if (!initPromise) await ensureInit(env.DB);
+    if (!initPromise) await ensureInit(env.DB, env.ADMIN_PASSWORD);
     return app.fetch(request, env, ctx);
   },
 };

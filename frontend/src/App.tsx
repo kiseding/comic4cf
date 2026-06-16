@@ -19,7 +19,7 @@ function Spinner() {
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to={`/login?return=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   return <>{children}</>;
 }
 

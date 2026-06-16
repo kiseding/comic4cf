@@ -47,6 +47,7 @@ export interface SiteSource {
   search(keyword: string, limit: number): Promise<SearchResult[]>;
   getDetail(comicId: string): Promise<ComicDetail>;
   getChapterImages(comicId: string, chapter: { id: string; url: string; title: string }): Promise<string[]>;
+  getChapterImagesStream?(comicId: string, chapter: { id: string; url: string; title: string }): ReadableStream<Uint8Array> | Promise<ReadableStream<Uint8Array>>;
   resolveURL(url: string): ResolvedURL | null;
   // Optional: provide a recommendation list filtered by a category slug.
   getCategoryBooks?(tag: string): Promise<SearchResult[]>;

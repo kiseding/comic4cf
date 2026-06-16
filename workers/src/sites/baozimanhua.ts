@@ -3,6 +3,22 @@
 import type { SiteSource, SearchResult, ComicDetail, ResolvedURL, ChapterItem } from "../types";
 import { fetchHTML, parseHTML, absolutizeURL, cleanText } from "../utils/http";
 
+async function asyncPool<T>(items: string[], limit: number, fn: (url: string) => Promise<T>): Promise<T[]> {
+  const results: T[] = [];
+  const executing = new Set<Promise<void>>();
+  for (const item of items) {
+    const p = fn(item).then(r => { results.push(r); });
+    executing.add(p);
+    const cleanup = () => executing.delete(p);
+    p.then(cleanup, cleanup);
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  await Promise.all(executing);
+  return results;
+}
+
 const MIRRORS = [
   "www.baozimh.com",
   "baozimh.com",
@@ -173,7 +189,12 @@ export class BaoziManhuaSource implements SiteSource {
       const pageImages: string[] = [];
       $(".comic-contain amp-img").each((_, img) => {
         const src = $(img).attr("src") || "";
-        if (src) pageImages.push(src.replace("bzcdn.net", "baozicdn.com"));
+        if (src) {
+          const rewritten = src
+            .replace("bzcdn.net", "baozicdn.com")
+            .replace("baozicdn.com", "baozicdn.com");
+          pageImages.push(rewritten);
+        }
       });
       const nextEl = $("#next-chapter").first();
       const nextText = cleanText(nextEl.text());
@@ -206,16 +227,13 @@ export class BaoziManhuaSource implements SiteSource {
     }
 
     if (parallelUrls.length > 0) {
-      const results = await Promise.allSettled(
-        parallelUrls.map(url => fetchPage(url))
-      );
+      const results = await asyncPool(parallelUrls, 4, async (url) => {
+        const r = await fetchPage(url);
+        return { url, ...r };
+      });
       for (const result of results) {
-        if (result.status === "fulfilled") {
-          images.push(...result.value.images);
-          if (!result.value.nextUrl) break;
-        } else {
-          break;
-        }
+        images.push(...result.images);
+        if (!result.nextUrl) break;
       }
     } else {
       // Sequential fallback when pattern can't be determined

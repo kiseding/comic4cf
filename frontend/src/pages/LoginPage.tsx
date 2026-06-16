@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 
 export default function LoginPage() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -16,7 +17,12 @@ export default function LoginPage() {
     e.preventDefault();
     if (!username.trim() || !password.trim()) { setError("请输入用户名和密码"); return; }
     setLoading(true); setError("");
-    try { await login(username.trim(), password); navigate("/"); }
+    try {
+      await login(username.trim(), password);
+      const params = new URLSearchParams(location.search);
+      const returnTo = params.get("return");
+      navigate(returnTo || "/");
+    }
     catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   };

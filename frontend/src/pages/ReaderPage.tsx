@@ -30,7 +30,9 @@ export default function ReaderPage() {
   const MAX_CACHE = 10;
   function setCache(key: string, value: { images: string[]; title: string }) {
     const map = chapterCacheRef.current;
-    while (map.size >= MAX_CACHE) {
+    if (map.has(key)) {
+      map.delete(key);
+    } else if (map.size >= MAX_CACHE) {
       const first = map.keys().next().value;
       if (first) map.delete(first);
     }
@@ -66,8 +68,7 @@ export default function ReaderPage() {
         if (scrollRef.current) scrollRef.current.scrollTop = 0;
       });
       if (recordedRef.current !== chapterId) {
-        recordedRef.current = chapterId;
-        api.addHistory({ site, comicId, title: comicTitle, author: "", coverUrl: "", chapterId, chapterTitle: cached.title }).catch(() => {});
+        api.addHistory({ site, comicId, title: comicTitle, author: "", coverUrl: "", chapterId, chapterTitle: cached.title }).then(() => { recordedRef.current = chapterId; }).catch(() => {});
         const idx = chaptersRef.current.findIndex(c => c.id === chapterId);
         if (idx >= 0) api.updateProgress(site!, comicId!, idx, chapterId!, cached.title).catch(() => {});
       }
@@ -93,8 +94,7 @@ export default function ReaderPage() {
         setLoading(false);
         setCache(cacheKey, { images: r.images, title: r.title });
         if (recordedRef.current !== chapterId) {
-          recordedRef.current = chapterId;
-          api.addHistory({ site, comicId, title: comicTitle, author: "", coverUrl: "", chapterId, chapterTitle: r.title }).catch(() => {});
+          api.addHistory({ site, comicId, title: comicTitle, author: "", coverUrl: "", chapterId, chapterTitle: r.title }).then(() => { recordedRef.current = chapterId; }).catch(() => {});
         }
         const idx = chaptersRef.current.findIndex(c => c.id === chapterId);
         if (idx >= 0) api.updateProgress(site!, comicId!, idx, chapterId!, r.title).catch(() => {});
@@ -131,29 +131,19 @@ export default function ReaderPage() {
       .then(r => {
         if (stale || !r.images || !r.images.length) return;
         setCache(cacheKey, { images: r.images, title: next.title });
-        r.images.forEach(url => { const img = new Image(); img.src = url; });
+        r.images.slice(0, 5).forEach(url => { const img = new Image(); img.src = url; });
       })
       .catch(() => {});
     return () => { stale = true; };
   }, [site, comicId, images, loading, chIdx, chapters, chapterId]);
 
-  function chapterSortId(id: string) {
-    const parts = (id || "").split("_").map(Number);
-    return parts.reduce((acc, n, i) => acc + (n || 0) * Math.pow(10000, parts.length - 1 - i), 0);
-  }
-
   function nextChapterId(dir: 1 | -1) {
     const cur = chapters[chIdx];
     if (!cur) return null;
-    const curKey = chapterSortId(cur.id);
-    let bestId: string | null = null;
-    let bestKey = dir > 0 ? Infinity : -Infinity;
-    for (const ch of chapters) {
-      const k = chapterSortId(ch.id);
-      if (dir > 0 && k > curKey && k < bestKey) { bestKey = k; bestId = ch.id; }
-      if (dir < 0 && k < curKey && k > bestKey) { bestKey = k; bestId = ch.id; }
-    }
-    return bestId;
+    const curIdx = chIdx;
+    const next = curIdx + dir;
+    if (next < 0 || next >= chapters.length) return null;
+    return chapters[next].id;
   }
 
   const goChapter = useCallback((id: string) => {

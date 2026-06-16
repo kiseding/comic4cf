@@ -3,6 +3,7 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { hashPassword } from "../auth/password";
 
 export async function initSchema(db: D1Database): Promise<void> {
+  await db.prepare("PRAGMA foreign_keys = ON").run();
   await db.prepare(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
@@ -42,6 +43,7 @@ export async function initSchema(db: D1Database): Promise<void> {
     chapter_id TEXT NOT NULL DEFAULT '',
     chapter_title TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE(user_id, site, comic_id)
   )`).run();
@@ -189,9 +191,8 @@ export async function addHistory(db: D1Database, userId: number, book: { site: s
   await db.prepare(`INSERT INTO history (user_id, site, comic_id, title, author, cover_url, chapter_id, chapter_title)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id, site, comic_id) DO UPDATE SET
-      chapter_id = excluded.chapter_id, chapter_title = excluded.chapter_title, created_at = datetime('now')`).bind(userId, book.site, book.comicId, book.title, book.author, book.coverUrl, book.chapterId, book.chapterTitle).run();
-  // Keep only latest 30
-  await db.prepare(`DELETE FROM history WHERE user_id = ? AND id NOT IN (SELECT id FROM history WHERE user_id = ? ORDER BY created_at DESC LIMIT 30)`).bind(userId, userId).run();
+      chapter_id = excluded.chapter_id, chapter_title = excluded.chapter_title, updated_at = datetime('now')`).bind(userId, book.site, book.comicId, book.title, book.author, book.coverUrl, book.chapterId, book.chapterTitle).run();
+  await db.prepare(`DELETE FROM history WHERE user_id = ? AND id NOT IN (SELECT id FROM history WHERE user_id = ? ORDER BY IFNULL(updated_at, created_at) DESC LIMIT 30)`).bind(userId, userId).run();
 }
 
 export async function listHistory(db: D1Database, userId: number): Promise<any[]> {
@@ -199,13 +200,14 @@ export async function listHistory(db: D1Database, userId: number): Promise<any[]
 }
 
 // Admin
-export async function ensureAdmin(db: D1Database): Promise<void> {
+export async function ensureAdmin(db: D1Database, adminPassword?: string): Promise<void> {
   const result = await db
     .prepare("SELECT COUNT(*) as count FROM users")
     .first<{ count: number }>();
   if (result && result.count > 0) return;
 
-  const hash = await hashPassword("admin123");
+  const password = adminPassword || "admin123";
+  const hash = await hashPassword(password);
   await db
     .prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)")
     .bind("admin", hash)

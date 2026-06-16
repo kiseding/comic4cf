@@ -1,7 +1,5 @@
-// HTTP utility for source sites — mirrors go-novel-dl's requestutil
 import { load } from "cheerio";
 
-// Rotate User-Agent per request to reduce fingerprinting
 const UAS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -34,10 +32,17 @@ export async function fetchHTML(url: string, opts?: RequestInit): Promise<string
   if (contentType.includes("text/html") || contentType.includes("application/xhtml")) {
     return resp.text();
   }
-  // Decode bytes as GBK if not UTF-8 (common for Chinese novel sites)
   const buf = await resp.arrayBuffer();
-  const decoder = new TextDecoder("gbk");
-  return decoder.decode(buf);
+  const bytes = new Uint8Array(buf);
+  if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    return new TextDecoder("utf-8").decode(buf);
+  }
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(buf);
+    return new TextDecoder("utf-8").decode(buf);
+  } catch {
+    return new TextDecoder("gbk").decode(buf);
+  }
 }
 
 export function parseHTML(html: string) {
@@ -56,5 +61,3 @@ export function absolutizeURL(base: string, href: string): string {
 export function cleanText(text: string): string {
   return text.replace(/[\s　]+/g, " ").trim();
 }
-
-

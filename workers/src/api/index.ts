@@ -193,6 +193,17 @@ api.get("/homepage", async (c) => {
   }
 });
 
+const cacheLocks = new Map<string, Promise<void>>();
+function withCacheLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = cacheLocks.get(key);
+  if (existing) {
+    return existing.then(() => fn());
+  }
+  const p = fn().finally(() => cacheLocks.delete(key));
+  cacheLocks.set(key, p as unknown as Promise<void>);
+  return p;
+}
+
 // ========== Search ==========
 api.post("/search", async (c) => {
   const { keyword, sites } = await c.req.json();
@@ -216,10 +227,14 @@ api.post("/search", async (c) => {
       }
     } catch {}
   }
-  const results = await registry.searchAll(sites || [], keyword.trim(), 50);
-      const resp = { results };
-  if (c.env.CACHE) c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify(resp), { expirationTtl: 300 }));
-  return c.json(resp);
+  const { results } = await withCacheLock(cacheKey, async () => {
+    const recheck = await getCache<any>(c, cacheKey);
+    if (recheck) return recheck;
+    const results = await registry.searchAll(sites || [], keyword.trim(), 50);
+    if (c.env.CACHE) c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify({ results }), { expirationTtl: 300 }));
+    return { results };
+  });
+  return c.json({ results });
 });
 
 // ========== Search (SSE streaming) ==========
@@ -254,6 +269,9 @@ api.post("/search/stream", async (c) => {
   const cached = await getCache<{ results: SearchResult[] }>(c, cacheKey);
 
   return streamSSE(c, async (stream) => {
+    const aborted = () => c.req.raw.signal.aborted;
+    if (aborted()) return;
+
     if (cached?.results?.length) {
       const bySite = new Map<string, SearchResult[]>();
       for (const it of cached.results) {
@@ -262,9 +280,10 @@ api.post("/search/stream", async (c) => {
         bySite.set(it.site, arr);
       }
       for (const [site, items] of bySite) {
-        await stream.writeSSE({ data: JSON.stringify({ site, results: items }) });
+        if (aborted()) return;
+        try { await stream.writeSSE({ data: JSON.stringify({ site, results: items }) }); } catch { return; }
       }
-      await stream.writeSSE({ data: JSON.stringify({ done: true }) });
+      try { await stream.writeSSE({ data: JSON.stringify({ done: true }) }); } catch {}
       return;
     }
 
@@ -273,16 +292,18 @@ api.post("/search/stream", async (c) => {
       try {
         const items = await registry.getSource(siteKey)!.search(kw, 10);
         for (const item of items) {
+          if (aborted()) return;
           aggregated.push({ ...item, site: siteKey });
-          await stream.writeSSE({ data: JSON.stringify({ site: siteKey, results: [item] }) });
+          try { await stream.writeSSE({ data: JSON.stringify({ site: siteKey, results: [item] }) }); } catch { return; }
         }
       } catch (e) {
         console.error(e);
-        await stream.writeSSE({ data: JSON.stringify({ site: siteKey, error: "搜索失败" }) });
+        try { await stream.writeSSE({ data: JSON.stringify({ site: siteKey, error: "搜索失败" }) }); } catch {}
       }
     });
     await Promise.all(pending);
-    await stream.writeSSE({ data: JSON.stringify({ done: true }) });
+    if (aborted()) return;
+    try { await stream.writeSSE({ data: JSON.stringify({ done: true }) }); } catch {}
     if (c.env.CACHE && aggregated.length) {
       c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify({ results: aggregated }), { expirationTtl: 300 }));
     }
@@ -322,6 +343,54 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
   } catch {
     console.error("Chapter images fetch failed");
     return c.json({ error: "服务暂时不可用" }, 502);
+  }
+});
+
+api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
+  const { site, comicId, chapterId } = c.req.param();
+  try {
+    const rawImages = await getRegistry().getChapterImages(site, comicId, {
+      id: chapterId,
+      url: c.req.query("url") || "",
+      title: c.req.query("title") || "",
+    });
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        for (const url of rawImages) {
+          try {
+            const imgResp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+            if (!imgResp.ok) continue;
+            const imgBuf = await imgResp.arrayBuffer();
+            const ct = imgResp.headers.get("content-type") || "image/jpeg";
+            const ctBytes = encoder.encode(ct);
+            const ctLen = new Uint8Array([ctBytes.length & 0xFF, (ctBytes.length >> 8) & 0xFF]);
+            const dataLenBytes = new Uint8Array([
+              imgBuf.byteLength & 0xFF,
+              (imgBuf.byteLength >> 8) & 0xFF,
+              (imgBuf.byteLength >> 16) & 0xFF,
+              (imgBuf.byteLength >> 24) & 0xFF,
+            ]);
+            controller.enqueue(ctLen);
+            controller.enqueue(ctBytes);
+            controller.enqueue(dataLenBytes);
+            controller.enqueue(new Uint8Array(imgBuf));
+          } catch {}
+        }
+        controller.enqueue(new Uint8Array([0xFF, 0xFF]));
+        controller.close();
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "Cache-Control": "public, max-age=3600",
+      },
+    });
+  } catch {
+    return c.json({ error: "流获取失败" }, 502);
   }
 });
 
@@ -374,7 +443,19 @@ api.put("/progress/:site/:comicId", authMiddleware, async (c) => {
   const u = c.get("user") as JwtPayload;
   const { site, comicId } = c.req.param();
   const { chapterIndex, chapterId, chapterTitle } = await c.req.json<ProgressInput>();
-  await db.updateReadingProgress(d, u.userId, site, comicId, chapterIndex, chapterId, chapterTitle);
+  const result = await d.prepare(
+    `UPDATE bookshelf SET chapter_index = ?, chapter_id = ?, chapter_title = ?, updated_at = datetime('now')
+     WHERE user_id = ? AND site = ? AND comic_id = ?`
+  ).bind(chapterIndex, chapterId, chapterTitle, u.userId, site, comicId).run();
+  if (result.meta.changes === 0) {
+    await d.prepare(
+      `INSERT INTO bookshelf (user_id, site, comic_id, chapter_index, chapter_id, chapter_title)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, site, comic_id) DO UPDATE SET
+         chapter_index = excluded.chapter_index, chapter_id = excluded.chapter_id,
+         chapter_title = excluded.chapter_title, updated_at = datetime('now')`
+    ).bind(u.userId, site, comicId, chapterIndex, chapterId, chapterTitle).run();
+  }
   return c.json({ ok: true });
 });
 export default api;

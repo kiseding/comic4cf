@@ -58,10 +58,7 @@ export class SiteRegistry {
       .filter(s => typeof s.getCategoryBooks === "function")
       .map(async s => {
         try {
-          return await Promise.race([
-            s.getCategoryBooks!(tag),
-            new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
-          ]) as SearchResult[];
+          return await s.getCategoryBooks!(tag);
         } catch { return [] as SearchResult[]; }
       });
     const results = await Promise.all(promises);
@@ -77,11 +74,8 @@ export class SiteRegistry {
     const results: SearchResult[] = [];
     const promises = targetSources.map(async (source) => {
       try {
-        return await Promise.race([
-          source.search(keyword, Math.min(limit, 5)),
-          new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
-        ]) as SearchResult[];
-      } catch { return []; }
+        return await source.search(keyword, Math.min(limit, 10));
+      } catch { return [] as SearchResult[]; }
     });
     const allResults = await Promise.all(promises);
     for (const items of allResults) results.push(...items);
