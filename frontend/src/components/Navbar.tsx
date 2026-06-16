@@ -14,7 +14,6 @@ export default function Navbar() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const path = location.pathname;
 
-  // Prevent mobile browsers from auto-focusing the only visible input on mount
   useEffect(() => {
     const el = searchInputRef.current;
     if (el && document.activeElement === el) el.blur();
@@ -38,7 +37,6 @@ export default function Navbar() {
       }
     };
 
-    // URL paste: single-shot resolution
     let isUrl = false;
     try { new URL(kw); isUrl = true; } catch {}
     if (isUrl) {
@@ -52,7 +50,6 @@ export default function Navbar() {
       return;
     }
 
-    // Keyword: stream from the start so an exact match surfaces the moment its source returns
     try {
       api.streamSearch(
         kw, [],
@@ -73,11 +70,10 @@ export default function Navbar() {
 
   const isHome = path === "/";
 
-  // iOS scrolls the viewport on focus, displacing fixed bars. Force-scroll back.
   const onSearchFocus = () => { window.scrollTo(0, 0); };
 
   return (
-    <header className="fixed top-0 left-0 right-0" style={{ zIndex: 100, isolation: "isolate", background: "var(--bg)", transform: "translateZ(0)", paddingTop: "env(safe-area-inset-top)" }}>
+    <header className="shrink-0" style={{ background: "var(--bg)" }}>
       <nav className="border-b border-theme">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-2">
           <Link to="/" onClick={() => { if (isHome) clear(); }} className={`btn-ghost text-base px-3 shrink-0 ${isHome ? "font-medium" : ""}`} style={{ color: isHome ? "var(--primary)" : "var(--t)" }}>首页</Link>

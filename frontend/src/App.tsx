@@ -13,7 +13,7 @@ const BookshelfPage = lazy(() => import("./pages/BookshelfPage"));
 const HistoryPage = lazy(() => import("./pages/HistoryPage"));
 
 function Spinner() {
-  return <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-2 border-[--primary] border-t-transparent" /></div>;
+  return <div className="flex items-center justify-center min-h-[100dvh]"><div className="animate-spin rounded-full h-8 w-8 border-2 border-[--primary] border-t-transparent" /></div>;
 }
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -29,28 +29,29 @@ function AppInner() {
 
   if (loading) return <Spinner />;
 
-  // Navbar = 56 (h-14). Home adds an independent search bar (~64) below it.
   const path = location.pathname;
-  const navHidden = path === "/login" || path.startsWith("/read");
-  const isHome = path === "/";
-  const padTopPx = navHidden ? 0 : (isHome ? 120 : 56);
+
+  if (path.startsWith("/read")) {
+    return (
+      <Suspense fallback={<Spinner />}>
+        <Routes>
+          <Route path="/read/:site/:comicId/:chapterId" element={<RequireAuth><ReaderPage /></RequireAuth>} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
+  const navHidden = path === "/login";
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <main
-        className="flex-1"
-        style={{
-          paddingTop: `calc(${padTopPx}px + env(safe-area-inset-top))`,
-          paddingBottom: `calc(env(safe-area-inset-bottom) + 16px)`,
-        }}
-      >
+    <div className="h-full flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      {!navHidden && <Navbar />}
+      <main className="flex-1 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
         <Suspense fallback={<Spinner />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<RequireAuth><HomePage /></RequireAuth>} />
           <Route path="/comic/:site/:comicId" element={<RequireAuth><ComicDetailPage /></RequireAuth>} />
-          <Route path="/read/:site/:comicId/:chapterId" element={<RequireAuth><ReaderPage /></RequireAuth>} />
           <Route path="/bookshelf" element={<RequireAuth><BookshelfPage /></RequireAuth>} />
           <Route path="/history" element={<RequireAuth><HistoryPage /></RequireAuth>} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -67,6 +67,12 @@ html.dark {
   --shadow-light: rgba(255,255,255,.04);
 }
 
+html, body {
+  height: 100dvh;
+  overflow: hidden;
+  margin: 0;
+}
+
 /* Theme utility classes */
 html { background: var(--bg); color: var(--t); }
 .bg-theme { background: var(--bg); }
@@ -80,7 +86,7 @@ html { background: var(--bg); color: var(--t); }
 
 @layer base {
   * { -webkit-tap-highlight-color: transparent; }
-  html { scroll-behavior: smooth; overflow-x: hidden; }
+  html { scroll-behavior: smooth; }
   body {
     @apply antialiased max-w-full;
     background: var(--bg);
