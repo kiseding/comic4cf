@@ -3,12 +3,15 @@
 import type { SiteSource, SearchResult, ComicDetail, ResolvedURL, ChapterItem } from "../types";
 import { fetchHTML, parseHTML, absolutizeURL, cleanText } from "../utils/http";
 
-async function asyncPool<T>(items: string[], limit: number, fn: (url: string) => Promise<T>): Promise<T[]> {
-  const results: T[] = [];
+async function asyncPool<T>(items: string[], limit: number, fn: (url: string) => Promise<T>): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = [];
   const executing = new Set<Promise<void>>();
   for (const item of items) {
-    const p = fn(item).then(r => { results.push(r); });
-    executing.add(p);
+    const p = fn(item).then(
+      r => { results.push({ status: "fulfilled" as const, value: r }); },
+      err => { results.push({ status: "rejected" as const, reason: err }); }
+    );
+    executing.add(p.then(() => {}, () => {}));
     const cleanup = () => executing.delete(p);
     p.then(cleanup, cleanup);
     if (executing.size >= limit) {
@@ -232,8 +235,10 @@ export class BaoziManhuaSource implements SiteSource {
         return { url, ...r };
       });
       for (const result of results) {
-        images.push(...result.images);
-        if (!result.nextUrl) break;
+        if (result.status === "rejected") break;
+        const page = result.value;
+        images.push(...page.images);
+        if (!page.nextUrl) break;
       }
     } else {
       // Sequential fallback when pattern can't be determined
