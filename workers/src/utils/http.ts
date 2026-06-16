@@ -38,7 +38,7 @@ export async function fetchHTML(url: string, opts?: RequestInit): Promise<string
     return new TextDecoder("utf-8").decode(buf);
   }
   try {
-    new TextDecoder("utf-8", { fatal: true }).decode(buf);
+    new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(buf);
     return new TextDecoder("utf-8").decode(buf);
   } catch {
     return new TextDecoder("gbk").decode(buf);
