@@ -47,6 +47,7 @@ export async function initSchema(db: D1Database): Promise<void> {
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE(user_id, site, comic_id)
   )`).run();
+  try { await db.prepare("ALTER TABLE history ADD COLUMN updated_at TEXT DEFAULT ''").run(); } catch {}
 }
 
 export interface UserRow {
