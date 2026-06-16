@@ -24,8 +24,6 @@ export default function ReaderPage() {
   const [chapters, setChapters] = useState<{ id: string; title: string; url: string }[]>([]);
   const [chIdx, setChIdx] = useState(-1);
 
-  const [showHeader, setShowHeader] = useState(true);
-  const lastScrollTop = useRef(0);
   const chapterCacheRef = useRef<Map<string, { images: string[]; title: string }>>(new Map());
   const chaptersRef = useRef(chapters);
   chaptersRef.current = chapters;
@@ -204,21 +202,6 @@ export default function ReaderPage() {
     }
   }, [showToc]);
 
-  // Scroll handler for header show/hide
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const st = el.scrollTop;
-      if (st <= 0) { setShowHeader(true); lastScrollTop.current = st; return; }
-      if (st > lastScrollTop.current + 8) setShowHeader(false);
-      else if (st < lastScrollTop.current - 8) setShowHeader(true);
-      lastScrollTop.current = st;
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [loading]);
-
   // Loading / Error states
   if (loading && prevImages.current.length === 0) return <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-2 border-[#6366f1] border-t-transparent" /></div>;
   if (error) return <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex items-center justify-center"><div className="text-center"><p className="text-red-500 mb-4">{error}</p><button onClick={() => navigate(-1)} className="btn-ghost min-h-[44px]">返回</button></div></div>;
@@ -229,10 +212,10 @@ export default function ReaderPage() {
     <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
       <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain touch-pan-y" style={{ WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <div className={`sticky top-0 z-40 bg-white/90 dark:bg-gray-900/90 backdrop-blur flex items-center justify-between px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 transition-all duration-300 ${showHeader ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"}`}>
-          <Link to={`/comic/${site}/${comicId}`} className="text-base text-[#6366f1] hover:underline whitespace-nowrap min-h-[44px] flex items-center">← 返回</Link>
+        <div className="sticky top-0 z-40 bg-white/90 dark:bg-gray-900/90 backdrop-blur flex items-center justify-between px-4 py-1.5 border-b border-gray-200 dark:border-gray-700">
+          <Link to={`/comic/${site}/${comicId}`} className="text-sm text-[#6366f1] hover:underline whitespace-nowrap">← 返回</Link>
           <span className="text-sm font-medium line-clamp-1 text-center mx-2 flex-1 min-w-0">{displayTitle}</span>
-          <button onClick={() => setShowToc(true)} className="text-base text-[#6366f1] hover:underline whitespace-nowrap min-h-[44px] flex items-center">{chIdx + 1}/{chapters.length} 目录</button>
+          <button onClick={() => setShowToc(true)} className="text-sm text-[#6366f1] hover:underline whitespace-nowrap">{chIdx + 1}/{chapters.length} 目录</button>
         </div>
         <div className="flex flex-col items-center">
           {images.slice(0, windowEnd).map((url, i) => (
