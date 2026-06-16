@@ -44,7 +44,7 @@ function AppInner() {
   const navHidden = path === "/login";
 
   return (
-    <div className="h-full flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+    <div className="h-dvh flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {!navHidden && <Navbar />}
       <main className="flex-1 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
         <Suspense fallback={<Spinner />}>

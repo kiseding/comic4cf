@@ -67,7 +67,7 @@ html.dark {
   --shadow-light: rgba(255,255,255,.04);
 }
 
-html, body {
+html, body, #root {
   height: 100dvh;
   overflow: hidden;
   margin: 0;
