@@ -131,7 +131,7 @@ export default function ReaderPage() {
       .then(r => {
         if (stale || !r.images || !r.images.length) return;
         setCache(cacheKey, { images: r.images, title: next.title });
-        r.images.slice(0, 5).forEach(url => { const img = new Image(); img.src = url; });
+        r.images.slice(0, 10).forEach(url => { const img = new Image(); img.src = url; });
       })
       .catch(() => {});
     return () => { stale = true; };
