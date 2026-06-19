@@ -63,7 +63,9 @@ jobs:
           sed -i 's/crossorigin//g' dist/index.html
       - name: Ensure SPA fallback
         working-directory: frontend
-        run: echo '/*    /index.html   200' > dist/_redirects
+        run: |
+          echo '/assets/* /assets/:splat 200' > dist/_redirects
+          echo '/*    /index.html   200' >> dist/_redirects
       - name: Deploy to Pages
         working-directory: frontend
         env:
