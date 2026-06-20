@@ -134,7 +134,8 @@ export class BaoziManhuaSource implements SiteSource {
       if (t) categories.push(t);
     });
 
-    // Chapter list: prefer the section under "章节目录/章節目錄" header (full list, source order is old→new, reverse to new→old).
+    // Chapter list: prefer the section under "章节目录/章節目錄" header (full list).
+    // Source DOM can have trailing chapters in reverse at the front; sort by numeric id.
     // Fallback: latest chapters block when full list isn't present.
     const chapters: ChapterItem[] = [];
 
@@ -166,6 +167,16 @@ export class BaoziManhuaSource implements SiteSource {
       }
       chapters.push({ id, title: name, url: abs, order: chapters.length + 1 });
     }
+
+    chapters.sort((a, b) => {
+      const pa = a.id.match(/^(\d+)_(\d+)$/);
+      const pb = b.id.match(/^(\d+)_(\d+)$/);
+      if (pa && pb) {
+        const diff = parseInt(pa[1]) - parseInt(pb[1]);
+        return diff !== 0 ? diff : parseInt(pa[2]) - parseInt(pb[2]);
+      }
+      return a.order - b.order;
+    });
     chapters.forEach((c, i) => { c.order = i + 1; });
 
     return {

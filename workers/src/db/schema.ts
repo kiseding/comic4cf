@@ -197,7 +197,7 @@ export async function addHistory(db: D1Database, userId: number, book: { site: s
 }
 
 export async function listHistory(db: D1Database, userId: number): Promise<any[]> {
-  return (await db.prepare("SELECT * FROM history WHERE user_id = ? ORDER BY IFNULL(updated_at, created_at) DESC LIMIT 30").bind(userId).all()).results;
+  return (await db.prepare("SELECT * FROM history WHERE user_id = ? ORDER BY created_at DESC LIMIT 30").bind(userId).all()).results;
 }
 
 // Admin
