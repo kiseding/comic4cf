@@ -47,6 +47,18 @@ export default function ReaderPage() {
 
   useEffect(() => { setLoadedCount(0); }, [images]);
 
+  // 3 秒无进展则跳过挂起的图片
+  useEffect(() => {
+    if (images.length === 0) return;
+    const t = setInterval(() => {
+      setLoadedCount(prev => {
+        if (prev >= images.length) return prev;
+        return Math.min(prev + 3, images.length);
+      });
+    }, 3000);
+    return () => clearInterval(t);
+  }, [images.length]);
+
   const handleLoad = () => {
     setLoadedCount(prev => Math.min(prev + 1, images.length));
   };
