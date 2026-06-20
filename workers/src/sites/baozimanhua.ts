@@ -7,13 +7,13 @@ async function asyncPool<T>(items: string[], limit: number, fn: (url: string) =>
   const results: PromiseSettledResult<T>[] = [];
   const executing = new Set<Promise<void>>();
   for (const item of items) {
-    const p = fn(item).then(
+    const wrapped = fn(item).then(
       r => { results.push({ status: "fulfilled" as const, value: r }); },
       err => { results.push({ status: "rejected" as const, reason: err }); }
     );
-    executing.add(p.then(() => {}, () => {}));
-    const cleanup = () => executing.delete(p);
-    p.then(cleanup, cleanup);
+    const tracker = wrapped.then(() => {}, () => {});
+    executing.add(tracker);
+    wrapped.then(() => executing.delete(tracker), () => executing.delete(tracker));
     if (executing.size >= limit) {
       await Promise.race(executing);
     }
@@ -194,8 +194,7 @@ export class BaoziManhuaSource implements SiteSource {
         const src = $(img).attr("src") || "";
         if (src) {
           const rewritten = src
-            .replace("bzcdn.net", "baozicdn.com")
-            .replace("baozicdn.com", "baozicdn.com");
+            .replace("bzcdn.net", "baozicdn.com");
           pageImages.push(rewritten);
         }
       });

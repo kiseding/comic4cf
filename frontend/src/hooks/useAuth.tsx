@@ -16,19 +16,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     try {
       const token = localStorage.getItem("token");
       if (token) {
-        // Timeout the getMe call after 5s to prevent hanging
-        const timeout = new Promise<never>((_, r) => setTimeout(() => r(new Error("timeout")), 5000));
-        Promise.race([api.getMe(), timeout])
-          .then(res => setUser((res as any).user))
-          .catch(() => localStorage.removeItem("token"))
-          .finally(() => setLoading(false));
+        api.getMe()
+          .then(res => { if (!cancelled) setUser(res.user); })
+          .catch(() => { if (!cancelled) localStorage.removeItem("token"); })
+          .finally(() => { if (!cancelled) setLoading(false); });
       } else { setLoading(false); }
     } catch {
       setLoading(false);
     }
+    return () => { cancelled = true; };
   }, []);
 
   const loginFn = useCallback(async (username: string, password: string) => {

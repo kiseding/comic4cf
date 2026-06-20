@@ -31,36 +31,40 @@ export default function ComicDetailPage() {
       const historyData = rawHistory as { items: any[] } | null;
       setComic(comicData);
 
-      if (shelfData) {
-        const found = shelfData.items.find(
-          (i: BookshelfItem) => i.site === site && i.comic_id === comicId,
-        );
-        setInBookshelf(!!found);
+      if (!shelfData) {
+        setInBookshelf(false);
+        setProgress(null);
+        return;
+      }
 
-        // History takes priority for reading progress
-        if (historyData) {
-          const hItems = historyData.items || [];
-          const his = hItems.find((i: any) => i.site === site && i.comic_id === comicId);
-          if (his?.chapter_id) {
-            const ch = comicData.chapters.find(c => c.id === his.chapter_id);
-            setProgress({
-              chapterId: his.chapter_id,
-              chapterTitle: his.chapter_title || ch?.title || '',
-              chapterUrl: ch?.url || '',
-            });
-            return;
-          }
-        }
+      const found = shelfData.items.find(
+        (i: BookshelfItem) => i.site === site && i.comic_id === comicId,
+      );
+      setInBookshelf(!!found);
 
-        // Fallback to bookshelf progress
-        if (found?.chapter_id) {
-          const ch = comicData.chapters.find(c => c.id === found.chapter_id);
+      if (historyData) {
+        const hItems = historyData.items || [];
+        const his = hItems.find((i: any) => i.site === site && i.comic_id === comicId);
+        if (his?.chapter_id) {
+          const ch = comicData.chapters.find(c => c.id === his.chapter_id);
           setProgress({
-            chapterId: found.chapter_id,
-            chapterTitle: found.chapter_title,
+            chapterId: his.chapter_id,
+            chapterTitle: his.chapter_title || ch?.title || '',
             chapterUrl: ch?.url || '',
           });
+          return;
         }
+      }
+
+      if (found?.chapter_id) {
+        const ch = comicData.chapters.find(c => c.id === found.chapter_id);
+        setProgress({
+          chapterId: found.chapter_id,
+          chapterTitle: found.chapter_title,
+          chapterUrl: ch?.url || '',
+        });
+      } else {
+        setProgress(null);
       }
     }).catch(e => setError(e.message)).finally(() => setLoading(false));
   }, [site, comicId, user]);

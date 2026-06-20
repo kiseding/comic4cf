@@ -200,7 +200,7 @@ export default function ReaderPage() {
   // Scroll to current chapter when TOC opens
   useEffect(() => {
     if (showToc) {
-      requestAnimationFrame(() => tocRef.current?.scrollIntoView({ block: "center" }));
+      requestAnimationFrame(() => tocRef.current?.scrollIntoView({ block: "nearest" }));
     }
   }, [showToc]);
 
@@ -222,7 +222,7 @@ export default function ReaderPage() {
         <div className="flex flex-col items-center">
           {images.slice(0, windowEnd).map((url, i) => (
             <img
-              key={i}
+              key={`${chapterId}-${i}`}
               src={url}
               alt={`Page ${i + 1}`}
               className="w-full max-w-[800px]"

@@ -18,11 +18,7 @@ const app = new Hono<{ Bindings: Bindings }>();
 // CORS
 app.use("*", cors({
   origin: (origin, c) => {
-    if (!origin) {
-      const allowed = (c.env as Bindings).ALLOWED_ORIGINS || "";
-      if (!allowed) return "*";
-      return null;
-    }
+    if (!origin) return "*";
     try {
       const u = new URL(origin);
       if (u.hostname === "localhost" || u.hostname.endsWith(".localhost")) return origin;
@@ -72,7 +68,8 @@ async function ensureInit(db?: D1Database, adminPassword?: string) {
 const handler: ExportedHandler<Bindings> = {
   async fetch(request, env, ctx) {
     if (!env.JWT_SECRET) return new Response(JSON.stringify({ error: "JWT_SECRET not configured" }), { status: 500, headers: { "Content-Type": "application/json" } });
-    if (!initPromise) await ensureInit(env.DB, env.ADMIN_PASSWORD);
+    if (!initPromise) ensureInit(env.DB, env.ADMIN_PASSWORD);
+    if (initPromise) await initPromise;
     return app.fetch(request, env, ctx);
   },
 };

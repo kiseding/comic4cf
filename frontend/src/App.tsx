@@ -18,6 +18,7 @@ function Spinner() {
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) return <Spinner />;
   if (!user) return <Navigate to={`/login?return=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   return <>{children}</>;
@@ -63,7 +64,7 @@ function AppInner() {
 }
 
 export default function App() {
-  applyTheme(getTheme());
+  useEffect(() => { applyTheme(getTheme()); }, []);
 
   useEffect(() => {
     const mql = window.matchMedia("(prefers-color-scheme: dark)");

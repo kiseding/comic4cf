@@ -5,7 +5,7 @@ import { signToken, verifyToken, extractToken, type JwtPayload } from "../auth/j
 import { hashPassword, verifyPassword } from "../auth/password";
 import * as db from "../db/schema";
 import { getRegistry } from "../sites/registry";
-import type { SearchResult } from "../sites/registry";
+import type { SearchResult, SiteRegistry } from "../sites/registry";
 import type { Context, Next } from "hono";
 import type { D1Database, KVNamespace } from "@cloudflare/workers-types";
 import { rateLimit } from "../middleware/rateLimit";
@@ -204,6 +204,19 @@ function withCacheLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return p;
 }
 
+async function resolveURLAsSearch(c: { env: Bindings }, registry: SiteRegistry, keyword: string) {
+  if (!keyword.startsWith('http://') && !keyword.startsWith('https://')) return null;
+  try {
+    new URL(keyword);
+    const resolved = registry.resolveURL(keyword);
+    if (resolved) {
+      const detail = await registry.getComicDetail(resolved.siteKey, resolved.comicId);
+      return { urlSearch: true, item: { key: `${resolved.siteKey}|${resolved.comicId}`, site: resolved.siteKey, comicId: resolved.comicId, title: detail.title, author: detail.author, description: detail.description, coverUrl: detail.coverUrl, url: detail.sourceUrl } };
+    }
+  } catch {}
+  return null;
+}
+
 // ========== Search ==========
 api.post("/search", async (c) => {
   const { keyword, sites } = await c.req.json();
@@ -214,19 +227,8 @@ api.post("/search", async (c) => {
   if (cachedSearch) return c.json(cachedSearch);
 
   const registry = getRegistry();
-  if (keyword.startsWith('http://') || keyword.startsWith('https://')) {
-    try {
-      new URL(keyword);
-      const resolved = registry.resolveURL(keyword);
-      if (resolved) {
-        const detail = await registry.getComicDetail(resolved.siteKey, resolved.comicId);
-        return c.json({
-          urlSearch: true,
-          item: { key: `${resolved.siteKey}|${resolved.comicId}`, site: resolved.siteKey, comicId: resolved.comicId, title: detail.title, author: detail.author, description: detail.description, coverUrl: detail.coverUrl, url: detail.sourceUrl },
-        });
-      }
-    } catch {}
-  }
+  const urlResult = await resolveURLAsSearch(c, registry, keyword);
+  if (urlResult) return c.json(urlResult);
   const { results } = await withCacheLock(cacheKey, async () => {
     const recheck = await getCache<any>(c, cacheKey);
     if (recheck) return recheck;
@@ -245,20 +247,8 @@ api.post("/search/stream", async (c) => {
   const registry = getRegistry();
   const kw = keyword.trim();
 
-  // URL resolve (returns plain JSON, not SSE)
-  if (kw.startsWith('http://') || kw.startsWith('https://')) {
-    try {
-      new URL(kw);
-      const resolved = registry.resolveURL(kw);
-      if (resolved) {
-        const detail = await registry.getComicDetail(resolved.siteKey, resolved.comicId);
-        return c.json({
-          urlSearch: true,
-          item: { key: `${resolved.siteKey}|${resolved.comicId}`, site: resolved.siteKey, comicId: resolved.comicId, title: detail.title, author: detail.author, description: detail.description, coverUrl: detail.coverUrl, url: detail.sourceUrl },
-        });
-      }
-    } catch {}
-  }
+  const urlResult = await resolveURLAsSearch(c, registry, kw);
+  if (urlResult) return c.json(urlResult);
 
   const targetSources: string[] = (sites && sites.length > 0)
     ? sites.filter((k: string) => registry.getSource(k))
@@ -356,12 +346,15 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
     });
 
     const encoder = new TextEncoder();
+    let skipped = 0;
+    const signal = c.req.raw.signal;
     const stream = new ReadableStream({
       async start(controller) {
         for (const url of rawImages) {
+          if (signal.aborted) break;
           try {
-            const imgResp = await fetch(url, { signal: AbortSignal.timeout(10000) });
-            if (!imgResp.ok) continue;
+            const imgResp = await fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) });
+            if (!imgResp.ok) { skipped++; continue; }
             const imgBuf = await imgResp.arrayBuffer();
             const ct = imgResp.headers.get("content-type") || "image/jpeg";
             const ctBytes = encoder.encode(ct);
@@ -376,7 +369,7 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
             controller.enqueue(ctBytes);
             controller.enqueue(dataLenBytes);
             controller.enqueue(new Uint8Array(imgBuf));
-          } catch {}
+          } catch { if (signal.aborted) break; skipped++; }
         }
         controller.enqueue(new Uint8Array([0xFF, 0xFF]));
         controller.close();
@@ -387,6 +380,7 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
       headers: {
         "Content-Type": "application/octet-stream",
         "Cache-Control": "public, max-age=3600",
+        "X-Skipped-Images": String(skipped),
       },
     });
   } catch {

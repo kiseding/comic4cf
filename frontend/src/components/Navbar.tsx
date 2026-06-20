@@ -25,7 +25,8 @@ export default function Navbar() {
     if (abortRef.current) abortRef.current.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    setResults([]); clearSourceErrors(); setExactMatch(null); setLoading(true); setKeyword(kw);
+    clear();
+    setLoading(true); setKeyword(kw);
 
     const kwNorm = kw.toLowerCase();
     const checkExact = (items: any[]) => {

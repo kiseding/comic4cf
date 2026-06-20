@@ -92,7 +92,10 @@ function AdminModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [newName, setNewName] = useState(""); const [newPw, setNewPw] = useState("");
   const [msg, setMsg] = useState("");
 
-  if (!loaded && open) { api.listUsers().then(res => { setUsers(res.users); setLoaded(true); }).catch(e => setMsg(e.message)); }
+  useEffect(() => {
+    if (!open || loaded) return;
+    api.listUsers().then(res => { setUsers(res.users); setLoaded(true); }).catch(e => setMsg(e.message));
+  }, [open, loaded]);
 
   const create = async () => {
     try { await api.adminCreateUser(newName, newPw); setMsg("✅ 用户已创建"); setNewName(""); setNewPw(""); api.listUsers().then(res => setUsers(res.users)); }
