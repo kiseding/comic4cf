@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import * as api from "../lib/api";
 import type { ComicDetail, BookshelfItem } from "../lib/api";
@@ -6,7 +6,11 @@ import { useAuth } from "../hooks/useAuth";
 
 // Module-level cache: keyed by "site/comicId", survives page transitions
 const detailCache = new Map<string, ComicDetail>();
-const scrollCache = new Map<string, number>();
+
+/** Save last-visited chapter so ComicDetailPage can scroll to it on return */
+function saveLastChapter(site: string, comicId: string, chapterId: string) {
+  try { sessionStorage.setItem(`lastCh:${site}/${comicId}`, chapterId); } catch {}
+}
 
 export default function ComicDetailPage() {
   const { site, comicId } = useParams<{ site: string; comicId: string }>();
@@ -24,32 +28,32 @@ export default function ComicDetailPage() {
   const [shelfLoading, setShelfLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [coverError, setCoverError] = useState(false);
+  const scrolledRef = useRef(false);
 
-  // Restore scroll position immediately after DOM commit (no rAF delay)
-  const scrollOnce = useRef(false);
-  useLayoutEffect(() => {
-    if (cachedInitial && !scrollOnce.current) {
-      scrollOnce.current = true;
-      const savedScroll = scrollCache.get(cacheKey);
-      if (savedScroll !== undefined && savedScroll > 0) {
-        const mainEl = document.getElementById("main-content");
-        if (mainEl) mainEl.scrollTop = savedScroll;
-      }
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Save scroll position before unmount
+  // Scroll to last-read chapter once data is ready
   useEffect(() => {
-    return () => {
-      if (site && comicId) {
-        const key = `${site}/${comicId}`;
-        const mainEl = document.getElementById("main-content");
-        if (mainEl) {
-          scrollCache.set(key, mainEl.scrollTop);
-        }
+    if (!comic || scrolledRef.current) return;
+    scrolledRef.current = true;
+
+    let targetId: string | null = null;
+
+    // 1. Last chapter saved during navigation (most precise)
+    try { targetId = sessionStorage.getItem(`lastCh:${cacheKey}`); } catch {}
+
+    // 2. Fall back to progress from API
+    if (!targetId) targetId = progress?.chapterId ?? null;
+
+    if (!targetId) return;
+
+    // Small delay for DOM to settle after render
+    const t = setTimeout(() => {
+      const el = targetId ? document.querySelector(`[data-ch="${targetId}"]`) : null;
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "instant" });
       }
-    };
-  }, [site, comicId]);
+    }, 50);
+    return () => clearTimeout(t);
+  }, [comic, progress?.chapterId, cacheKey]);
 
   useEffect(() => {
     if (!site || !comicId) return;
@@ -150,7 +154,10 @@ export default function ComicDetailPage() {
               return (
                 <button
                   className="btn-primary text-xs px-4 min-h-[44px]"
-                  onClick={() => navigate(`/read/${site}/${comicId}/${target.id}?comicTitle=${encodeURIComponent(comic.title)}&title=${encodeURIComponent(target.title)}&url=${encodeURIComponent(target.url || "")}`)}
+                  onClick={() => {
+                    if (site && comicId) saveLastChapter(site, comicId, target.id);
+                    navigate(`/read/${site}/${comicId}/${target.id}?comicTitle=${encodeURIComponent(comic.title)}&title=${encodeURIComponent(target.title)}&url=${encodeURIComponent(target.url || "")}`);
+                  }}
                 >
                   {target.label}
                 </button>
@@ -170,7 +177,12 @@ export default function ComicDetailPage() {
       <h2 className="text-sm font-medium mb-3">目录</h2>
       <div className="space-y-0.5">
         {comic.chapters.map(ch => (
-          <Link key={ch.id} to={`/read/${site}/${comicId}/${ch.id}?comicTitle=${encodeURIComponent(comic.title)}&title=${encodeURIComponent(ch.title)}&url=${encodeURIComponent(ch.url || "")}`}
+          <Link key={ch.id}
+            data-ch={ch.id}
+            to={`/read/${site}/${comicId}/${ch.id}?comicTitle=${encodeURIComponent(comic.title)}&title=${encodeURIComponent(ch.title)}&url=${encodeURIComponent(ch.url || "")}`}
+            onClick={() => {
+              if (site && comicId) saveLastChapter(site, comicId, ch.id);
+            }}
             className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors min-h-[44px]">
             <span className="line-clamp-1 flex-1">{ch.title}</span>
             <span className="text-[10px] text-gray-400 shrink-0 ml-2">{ch.order}</span>

@@ -4,6 +4,11 @@ import Modal from "../components/Modal";
 import * as api from "../lib/api";
 import type { ComicDetail } from "../lib/api";
 
+/** Save last-read chapter so ComicDetailPage can scroll to it on return */
+function saveLastChapter(site: string, comicId: string, chapterId: string) {
+  try { sessionStorage.setItem(`lastCh:${site}/${comicId}`, chapterId); } catch {}
+}
+
 export default function ReaderPage() {
   const { site, comicId, chapterId } = useParams<{ site: string; comicId: string; chapterId: string }>();
   const [searchParams] = useSearchParams();
@@ -127,6 +132,11 @@ export default function ReaderPage() {
   useEffect(() => {
     if (chapters.length) setChIdx(chapters.findIndex(ch => ch.id === chapterId));
   }, [chapters, chapterId]);
+
+  // Keep sessionStorage in sync so ComicDetailPage can scroll here on return
+  useEffect(() => {
+    if (site && comicId && chapterId) saveLastChapter(site, comicId, chapterId);
+  }, [site, comicId, chapterId]);
 
   // Preload next chapter — cache URLs + pre-download all images in parallel
   useEffect(() => {
