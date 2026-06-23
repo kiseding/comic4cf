@@ -4,6 +4,10 @@ import * as api from "../lib/api";
 import type { ComicDetail, BookshelfItem } from "../lib/api";
 import { useAuth } from "../hooks/useAuth";
 
+// Module-level cache: keyed by "site/comicId", survives page transitions
+const detailCache = new Map<string, ComicDetail>();
+const scrollCache = new Map<string, number>();
+
 export default function ComicDetailPage() {
   const { site, comicId } = useParams<{ site: string; comicId: string }>();
   const { user } = useAuth();
@@ -17,9 +21,31 @@ export default function ComicDetailPage() {
   const [msg, setMsg] = useState("");
   const [coverError, setCoverError] = useState(false);
 
+  // Save scroll position before unmount
+  useEffect(() => {
+    return () => {
+      if (site && comicId) {
+        const key = `${site}/${comicId}`;
+        const mainEl = document.getElementById("main-content");
+        if (mainEl) {
+          scrollCache.set(key, mainEl.scrollTop);
+        }
+      }
+    };
+  }, [site, comicId]);
+
   useEffect(() => {
     if (!site || !comicId) return;
-    setLoading(true); setError("");
+    const cacheKey = `${site}/${comicId}`;
+    const cached = detailCache.get(cacheKey);
+
+    if (cached) {
+      setComic(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+    setError("");
 
     const loadDetail = api.getComicDetail(site, comicId);
     const loadShelf = user ? api.getBookshelf() : Promise.resolve(null);
@@ -29,6 +55,9 @@ export default function ComicDetailPage() {
       const comicData = rawComic as ComicDetail;
       const shelfData = rawShelf as { items: BookshelfItem[] } | null;
       const historyData = rawHistory as { items: any[] } | null;
+
+      // Update state and cache
+      detailCache.set(cacheKey, comicData);
       setComic(comicData);
 
       if (!shelfData) {
@@ -66,7 +95,21 @@ export default function ComicDetailPage() {
       } else {
         setProgress(null);
       }
-    }).catch(e => setError(e.message)).finally(() => setLoading(false));
+    }).catch(e => {
+      // Only show error banner if we have nothing to show
+      if (!cached) setError(e.message);
+    }).finally(() => setLoading(false));
+
+    // Restore scroll position when returning from reader
+    if (cached) {
+      const savedScroll = scrollCache.get(cacheKey);
+      if (savedScroll !== undefined && savedScroll > 0) {
+        requestAnimationFrame(() => {
+          const mainEl = document.getElementById("main-content");
+          if (mainEl) mainEl.scrollTop = savedScroll;
+        });
+      }
+    }
   }, [site, comicId, user]);
 
   const toggleBookshelf = async () => {

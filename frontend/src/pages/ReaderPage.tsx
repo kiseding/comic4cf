@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom";
+import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import Modal from "../components/Modal";
 import * as api from "../lib/api";
 import type { ComicDetail } from "../lib/api";
@@ -200,7 +200,11 @@ export default function ReaderPage() {
   // Scroll to current chapter when TOC opens
   useEffect(() => {
     if (showToc) {
-      requestAnimationFrame(() => tocRef.current?.scrollIntoView({ block: "nearest" }));
+      // Modal uses createPortal + visible state animation, wait for DOM to settle
+      const t = setTimeout(() => {
+        tocRef.current?.scrollIntoView({ block: "nearest" });
+      }, 50);
+      return () => clearTimeout(t);
     }
   }, [showToc]);
 
@@ -215,7 +219,7 @@ export default function ReaderPage() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain touch-pan-y" style={{ WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         <div className="sticky top-0 z-40 bg-white/90 dark:bg-gray-900/90 backdrop-blur flex items-center justify-between px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
-          <Link to={`/comic/${site}/${comicId}`} className="text-sm text-[#6366f1] hover:underline whitespace-nowrap">← 返回</Link>
+          <button onClick={() => navigate(-1)} className="text-sm text-[#6366f1] hover:underline whitespace-nowrap">← 返回</button>
           <span className="text-sm font-medium line-clamp-1 text-center mx-2 flex-1 min-w-0">{displayTitle}</span>
           <button onClick={() => setShowToc(true)} className="text-sm text-[#6366f1] hover:underline whitespace-nowrap">{chIdx + 1}/{chapters.length} 目录</button>
         </div>

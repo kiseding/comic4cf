@@ -47,7 +47,7 @@ function AppInner() {
   return (
     <div className="h-dvh flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {!navHidden && <Navbar />}
-      <main className="flex-1 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
+      <main id="main-content" className="flex-1 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
         <Suspense fallback={<Spinner />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
