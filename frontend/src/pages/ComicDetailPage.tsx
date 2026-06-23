@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import * as api from "../lib/api";
 import type { ComicDetail, BookshelfItem } from "../lib/api";
@@ -12,14 +12,31 @@ export default function ComicDetailPage() {
   const { site, comicId } = useParams<{ site: string; comicId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [comic, setComic] = useState<ComicDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // Initialize state from cache — no loading flash on back-navigation
+  const cacheKey = site && comicId ? `${site}/${comicId}` : "";
+  const cachedInitial = cacheKey ? detailCache.get(cacheKey) : undefined;
+  const [comic, setComic] = useState<ComicDetail | null>(cachedInitial ?? null);
+  const [loading, setLoading] = useState(!cachedInitial);
   const [error, setError] = useState("");
   const [inBookshelf, setInBookshelf] = useState(false);
   const [progress, setProgress] = useState<{ chapterId: string; chapterTitle: string; chapterUrl: string } | null>(null);
   const [shelfLoading, setShelfLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [coverError, setCoverError] = useState(false);
+
+  // Restore scroll position immediately after DOM commit (no rAF delay)
+  const scrollOnce = useRef(false);
+  useLayoutEffect(() => {
+    if (cachedInitial && !scrollOnce.current) {
+      scrollOnce.current = true;
+      const savedScroll = scrollCache.get(cacheKey);
+      if (savedScroll !== undefined && savedScroll > 0) {
+        const mainEl = document.getElementById("main-content");
+        if (mainEl) mainEl.scrollTop = savedScroll;
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save scroll position before unmount
   useEffect(() => {
@@ -36,15 +53,6 @@ export default function ComicDetailPage() {
 
   useEffect(() => {
     if (!site || !comicId) return;
-    const cacheKey = `${site}/${comicId}`;
-    const cached = detailCache.get(cacheKey);
-
-    if (cached) {
-      setComic(cached);
-      setLoading(false);
-    } else {
-      setLoading(true);
-    }
     setError("");
 
     const loadDetail = api.getComicDetail(site, comicId);
@@ -56,7 +64,7 @@ export default function ComicDetailPage() {
       const shelfData = rawShelf as { items: BookshelfItem[] } | null;
       const historyData = rawHistory as { items: any[] } | null;
 
-      // Update state and cache
+      // Update cache and state
       detailCache.set(cacheKey, comicData);
       setComic(comicData);
 
@@ -96,20 +104,9 @@ export default function ComicDetailPage() {
         setProgress(null);
       }
     }).catch(e => {
-      // Only show error banner if we have nothing to show
-      if (!cached) setError(e.message);
+      // Only show error banner if we have nothing cached
+      if (!detailCache.get(cacheKey)) setError(e.message);
     }).finally(() => setLoading(false));
-
-    // Restore scroll position when returning from reader
-    if (cached) {
-      const savedScroll = scrollCache.get(cacheKey);
-      if (savedScroll !== undefined && savedScroll > 0) {
-        requestAnimationFrame(() => {
-          const mainEl = document.getElementById("main-content");
-          if (mainEl) mainEl.scrollTop = savedScroll;
-        });
-      }
-    }
   }, [site, comicId, user]);
 
   const toggleBookshelf = async () => {
