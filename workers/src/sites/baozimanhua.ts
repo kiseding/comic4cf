@@ -2,6 +2,7 @@
 // Comic page: /comic/<id>; chapter quick page: /comic/chapter/<id>/<section>_<chapter>.html
 import type { SiteSource, SearchResult, ComicDetail, ResolvedURL, ChapterItem } from "../types";
 import { fetchHTML, parseHTML, absolutizeURL, cleanText } from "../utils/http";
+import { t2s, t2sDeep } from "../utils/zhconv";
 
 async function asyncPool<T>(items: string[], limit: number, fn: (url: string) => Promise<T>): Promise<PromiseSettledResult<T>[]> {
   const results: PromiseSettledResult<T>[] = [];
@@ -98,7 +99,7 @@ export class BaoziManhuaSource implements SiteSource {
 
       const cover = $(el).find("amp-img").attr("src") || $(el).find("img").attr("src") || "";
 
-      results.push({
+      results.push(t2sDeep({
         site: this.key,
         comicId,
         title,
@@ -107,7 +108,7 @@ export class BaoziManhuaSource implements SiteSource {
         url: absolutizeURL(base, href),
         coverUrl: absolutizeURL(base, cover),
         latestChapter: "",
-      });
+      }));
     });
 
     return results;
@@ -179,7 +180,7 @@ export class BaoziManhuaSource implements SiteSource {
     });
     chapters.forEach((c, i) => { c.order = i + 1; });
 
-    return {
+    return t2sDeep({
       site: this.key,
       comicId,
       title: title || comicId,
@@ -190,7 +191,7 @@ export class BaoziManhuaSource implements SiteSource {
       status,
       categories,
       chapters,
-    };
+    });
   }
 
   async getChapterImages(comicId: string, chapter: { id: string; url: string; title: string }): Promise<string[]> {

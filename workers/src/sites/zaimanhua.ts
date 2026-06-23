@@ -2,6 +2,7 @@
 // API base: https://manhua.zaimanhua.com
 // ComicId format: pinyin name (e.g. "beats"), numeric ID fetched from detail API internally.
 import type { SiteSource, SearchResult, ComicDetail, ResolvedURL, ChapterItem } from "../types";
+import { t2sDeep } from "../utils/zhconv";
 
 const API_BASE = "https://v4api.zaimanhua.com";
 // Anonymous auth params embedded in the Nuxt SPA
@@ -63,7 +64,7 @@ export class ZaiManhuaSource implements SiteSource {
 
   async search(keyword: string, limit: number): Promise<SearchResult[]> {
     const data = await apiGet<{ list: any[] }>("/app/v1/search/index", { keyword });
-    return (data.list || []).slice(0, limit).map((item: any) => ({
+    return (data.list || []).slice(0, limit).map((item: any) => t2sDeep({
       site: this.key,
       comicId: item.comic_py || String(item.id),
       title: item.title || "",
@@ -80,7 +81,7 @@ export class ZaiManhuaSource implements SiteSource {
     const params: Record<string, string | number> = {};
     if (tag) params.tag = tag;
     const data = await apiGet<{ list: any[] }>("/api/v1/comic1/filter", params);
-    return (data.list || []).slice(0, 30).map((item: any) => ({
+    return (data.list || []).slice(0, 30).map((item: any) => t2sDeep({
       site: this.key,
       comicId: item.comic_py || String(item.id),
       title: item.title || "",
@@ -105,17 +106,17 @@ export class ZaiManhuaSource implements SiteSource {
       for (const group of info.chapterList) {
         if (!group.data) continue;
         for (const ch of group.data) {
-          chapters.push({
+          chapters.push(t2sDeep({
             id: String(ch.chapter_id),
             title: ch.chapter_title || "",
             url: `https://www.zaimanhua.com/view/${info.comicPy}/${info.id}/${ch.chapter_id}`,
             order: ch.chapter_order || chapters.length + 1,
-          });
+          }));
         }
       }
     }
 
-    return {
+    return t2sDeep({
       site: this.key,
       comicId,
       title: info.title || comicId,
@@ -126,7 +127,7 @@ export class ZaiManhuaSource implements SiteSource {
       status: info.status === "已完结" ? "已完结" : "连载中",
       categories: (info.types || "").split("/").filter(Boolean).map((t: string) => t.trim()),
       chapters,
-    };
+    });
   }
 
   async getChapterImages(
