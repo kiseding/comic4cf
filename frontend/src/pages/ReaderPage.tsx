@@ -212,7 +212,7 @@ export default function ReaderPage() {
     if (showToc) {
       // Modal uses createPortal + visible state animation, wait for DOM to settle
       const t = setTimeout(() => {
-        tocRef.current?.scrollIntoView({ block: "nearest" });
+        tocRef.current?.scrollIntoView({ block: "center" });
       }, 50);
       return () => clearTimeout(t);
     }
