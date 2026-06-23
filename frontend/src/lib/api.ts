@@ -84,4 +84,6 @@ export async function removeFromBookshelf(site: string, comicId: string) { retur
 export async function getHistory() { return request<{ items: HistoryItem[] }>("/history"); }
 export async function addHistory(book: { site: string; comicId: string; title: string; author: string; coverUrl: string; chapterId: string; chapterTitle: string }) { return request<{ ok: boolean }>("/history", { method: "POST", body: JSON.stringify(book) }); }
 export async function clearHistory() { return request<{ ok: boolean }>("/history", { method: "DELETE" }); }
-export async function updateProgress(site: string, comicId: string, chapterIndex: number, chapterId: string, chapterTitle: string) { return request<{ ok: boolean }>(`/progress/${site}/${comicId}`, { method: "PUT", body: JSON.stringify({ chapterIndex, chapterId, chapterTitle }) }); }
+export async function updateProgress(site: string, comicId: string, chapterIndex: number, chapterId: string, chapterTitle: string, extras?: { title?: string; author?: string; coverUrl?: string }) {
+  return request<{ ok: boolean }>(`/progress/${site}/${comicId}`, { method: "PUT", body: JSON.stringify({ chapterIndex, chapterId, chapterTitle, ...extras }) });
+}

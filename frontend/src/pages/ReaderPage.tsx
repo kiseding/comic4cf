@@ -27,6 +27,7 @@ export default function ReaderPage() {
   const [showToc, setShowToc] = useState(false);
   const tocRef = useRef<HTMLButtonElement>(null);
   const [chapters, setChapters] = useState<{ id: string; title: string; url: string }[]>([]);
+  const [comicName, setComicName] = useState(comicTitle);
   const [chIdx, setChIdx] = useState(-1);
 
   const chapterCacheRef = useRef<Map<string, { images: string[]; title: string }>>(new Map());
@@ -85,9 +86,9 @@ export default function ReaderPage() {
         if (scrollRef.current) scrollRef.current.scrollTop = 0;
       });
       if (recordedRef.current !== chapterId) {
-        api.addHistory({ site, comicId, title: comicTitle, author: "", coverUrl: "", chapterId, chapterTitle: cached.title }).then(() => { recordedRef.current = chapterId; }).catch(() => {});
+        api.addHistory({ site, comicId, title: comicName || comicTitle, author: "", coverUrl: "", chapterId, chapterTitle: cached.title }).then(() => { recordedRef.current = chapterId; }).catch(() => {});
         const idx = chaptersRef.current.findIndex(c => c.id === chapterId);
-        if (idx >= 0) api.updateProgress(site!, comicId!, idx, chapterId!, cached.title).catch(() => {});
+        if (idx >= 0) api.updateProgress(site!, comicId!, idx, chapterId!, cached.title, { title: comicName || comicTitle }).catch(() => {});
       }
       return;
     }
@@ -111,10 +112,10 @@ export default function ReaderPage() {
         setLoading(false);
         setCache(cacheKey, { images: r.images, title: r.title });
         if (recordedRef.current !== chapterId) {
-          api.addHistory({ site, comicId, title: comicTitle, author: "", coverUrl: "", chapterId, chapterTitle: r.title }).then(() => { recordedRef.current = chapterId; }).catch(() => {});
+          api.addHistory({ site, comicId, title: comicName || comicTitle, author: "", coverUrl: "", chapterId, chapterTitle: r.title }).then(() => { recordedRef.current = chapterId; }).catch(() => {});
         }
         const idx = chaptersRef.current.findIndex(c => c.id === chapterId);
-        if (idx >= 0) api.updateProgress(site!, comicId!, idx, chapterId!, r.title).catch(() => {});
+        if (idx >= 0) api.updateProgress(site!, comicId!, idx, chapterId!, r.title, { title: comicName || comicTitle }).catch(() => {});
       })
       .catch(e => { if (!stale) { setError(e.message); setLoading(false); } });
 
@@ -124,9 +125,10 @@ export default function ReaderPage() {
   // Chapter list
   useEffect(() => {
     if (!site || !comicId) return;
-    api.getComicDetail(site, comicId).then((b: ComicDetail) =>
-      setChapters(b.chapters.map(ch => ({ id: ch.id, title: ch.title, url: ch.url || "" })))
-    ).catch(() => {});
+    api.getComicDetail(site, comicId).then((b: ComicDetail) => {
+      setChapters(b.chapters.map(ch => ({ id: ch.id, title: ch.title, url: ch.url || "" })));
+      if (b.title) setComicName(b.title);
+    }).catch(() => {});
   }, [site, comicId]);
 
   useEffect(() => {

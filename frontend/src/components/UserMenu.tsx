@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import * as api from "../lib/api";
 import { applyTheme, getTheme } from "../lib/theme";
@@ -6,6 +7,7 @@ import Modal from "./Modal";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [animating, setAnimating] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -43,7 +45,7 @@ export default function UserMenu() {
         </>
       )}
       <ChangePasswordModal open={modal === "pw"} onClose={() => setModal(null)} />
-      <LogoutModal open={modal === "logout"} onClose={() => setModal(null)} logout={logout} />
+      <LogoutModal open={modal === "logout"} onClose={() => setModal(null)} logout={logout} onLoggedOut={() => { setModal(null); navigate("/"); }} />
       <AdminModal open={modal === "admin"} onClose={() => setModal(null)} />
     </div>
   );
@@ -74,13 +76,13 @@ function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => 
   );
 }
 
-function LogoutModal({ open, onClose, logout }: { open: boolean; onClose: () => void; logout: () => void }) {
+function LogoutModal({ open, onClose, logout, onLoggedOut }: { open: boolean; onClose: () => void; logout: () => void; onLoggedOut: () => void }) {
   return (
     <Modal open={open} onClose={onClose} title="退出登录">
       <p className="text-sm text-gray-500 mb-4">确定要退出当前账号吗？</p>
       <div className="flex gap-2">
         <button className="btn-ghost flex-1" onClick={onClose}>取消</button>
-        <button className="btn-primary flex-1 bg-red-500 hover:bg-red-600" onClick={() => { logout(); onClose(); }}>确认退出</button>
+        <button className="btn-primary flex-1 bg-red-500 hover:bg-red-600" onClick={() => { logout(); onLoggedOut(); }}>确认退出</button>
       </div>
     </Modal>
   );

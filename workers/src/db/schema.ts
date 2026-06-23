@@ -192,7 +192,7 @@ export async function addHistory(db: D1Database, userId: number, book: { site: s
   await db.prepare(`INSERT INTO history (user_id, site, comic_id, title, author, cover_url, chapter_id, chapter_title)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id, site, comic_id) DO UPDATE SET
-      chapter_id = excluded.chapter_id, chapter_title = excluded.chapter_title, updated_at = datetime('now')`).bind(userId, book.site, book.comicId, book.title, book.author, book.coverUrl, book.chapterId, book.chapterTitle).run();
+      title = excluded.title, chapter_id = excluded.chapter_id, chapter_title = excluded.chapter_title, updated_at = datetime('now')`).bind(userId, book.site, book.comicId, book.title, book.author, book.coverUrl, book.chapterId, book.chapterTitle).run();
   await db.prepare(`DELETE FROM history WHERE user_id = ? AND id NOT IN (SELECT id FROM history WHERE user_id = ? ORDER BY IFNULL(updated_at, created_at) DESC LIMIT 30)`).bind(userId, userId).run();
 }
 

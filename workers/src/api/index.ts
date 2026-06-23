@@ -58,6 +58,9 @@ interface ProgressInput {
   chapterIndex: number;
   chapterId: string;
   chapterTitle: string;
+  title?: string;
+  author?: string;
+  coverUrl?: string;
 }
 
 const api = new Hono<{ Bindings: Bindings; Variables: Variables }>();
@@ -436,19 +439,19 @@ api.put("/progress/:site/:comicId", authMiddleware, async (c) => {
   const d = DB(c);
   const u = c.get("user") as JwtPayload;
   const { site, comicId } = c.req.param();
-  const { chapterIndex, chapterId, chapterTitle } = await c.req.json<ProgressInput>();
+  const { chapterIndex, chapterId, chapterTitle, title, author, coverUrl } = await c.req.json<ProgressInput>();
   const result = await d.prepare(
     `UPDATE bookshelf SET chapter_index = ?, chapter_id = ?, chapter_title = ?, updated_at = datetime('now')
      WHERE user_id = ? AND site = ? AND comic_id = ?`
   ).bind(chapterIndex, chapterId, chapterTitle, u.userId, site, comicId).run();
   if (result.meta.changes === 0) {
     await d.prepare(
-      `INSERT INTO bookshelf (user_id, site, comic_id, chapter_index, chapter_id, chapter_title)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO bookshelf (user_id, site, comic_id, title, author, cover_url, chapter_index, chapter_id, chapter_title)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(user_id, site, comic_id) DO UPDATE SET
          chapter_index = excluded.chapter_index, chapter_id = excluded.chapter_id,
          chapter_title = excluded.chapter_title, updated_at = datetime('now')`
-    ).bind(u.userId, site, comicId, chapterIndex, chapterId, chapterTitle).run();
+    ).bind(u.userId, site, comicId, title || "", author || "", coverUrl || "", chapterIndex, chapterId, chapterTitle).run();
   }
   return c.json({ ok: true });
 });
