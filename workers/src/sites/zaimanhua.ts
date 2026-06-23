@@ -3,7 +3,7 @@
 // ComicId format: pinyin name (e.g. "beats"), numeric ID fetched from detail API internally.
 import type { SiteSource, SearchResult, ComicDetail, ResolvedURL, ChapterItem } from "../types";
 
-const API_BASE = "https://manhua.zaimanhua.com";
+const API_BASE = "https://v4api.zaimanhua.com";
 // Anonymous auth params embedded in the Nuxt SPA
 const AUTH = {
   channel: "pc",
