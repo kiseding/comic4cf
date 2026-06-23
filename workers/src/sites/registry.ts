@@ -3,6 +3,7 @@ import type { SiteSource, SearchResult, ComicDetail } from "../types";
 export type { SearchResult };
 
 import { BaoziManhuaSource } from "./baozimanhua";
+import { ZaiManhuaSource } from "./zaimanhua";
 
 export interface SourceMeta {
   key: string;
@@ -13,6 +14,7 @@ export interface SourceMeta {
 
 const SOURCES: SiteSource[] = [
   new BaoziManhuaSource(),
+  new ZaiManhuaSource(),
 ];
 
 export class SiteRegistry {
