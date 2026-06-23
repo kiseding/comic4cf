@@ -220,7 +220,7 @@ export default function ReaderPage() {
 
   // Loading / Error states
   if (loading && prevImages.current.length === 0) return <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-2 border-[#6366f1] border-t-transparent" /></div>;
-  if (error) return <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex items-center justify-center"><div className="text-center"><p className="text-red-500 mb-4">{error}</p><button onClick={() => navigate(-1)} className="btn-ghost min-h-[44px]">返回</button></div></div>;
+  if (error) return <div className="w-full h-dvh bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-200 flex items-center justify-center"><div className="text-center"><p className="text-red-500 mb-4">{error}</p><button onClick={() => navigate(`/comic/${site}/${comicId}`)} className="btn-ghost min-h-[44px]">返回</button></div></div>;
 
   const displayTitle = title || prevTitle.current;
 
@@ -229,7 +229,7 @@ export default function ReaderPage() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain touch-pan-y" style={{ WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         <div className="sticky top-0 z-40 bg-white/90 dark:bg-gray-900/90 backdrop-blur flex items-center justify-between px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
-          <button onClick={() => navigate(-1)} className="text-sm text-[#6366f1] hover:underline whitespace-nowrap">← 返回</button>
+          <button onClick={() => navigate(`/comic/${site}/${comicId}`)} className="text-sm text-[#6366f1] hover:underline whitespace-nowrap">← 返回</button>
           <span className="text-sm font-medium line-clamp-1 text-center mx-2 flex-1 min-w-0">{displayTitle}</span>
           <button onClick={() => setShowToc(true)} className="text-sm text-[#6366f1] hover:underline whitespace-nowrap">{chIdx + 1}/{chapters.length} 目录</button>
         </div>
@@ -250,7 +250,7 @@ export default function ReaderPage() {
           {images.length === 0 && !loading && (
             <div className="text-center py-16 text-gray-500">
               <p className="mb-4">该章节暂无图片</p>
-              <button className="btn-ghost" onClick={() => navigate(-1)}>返回</button>
+              <button className="btn-ghost" onClick={() => navigate(`/comic/${site}/${comicId}`)}>返回</button>
             </div>
           )}
 
