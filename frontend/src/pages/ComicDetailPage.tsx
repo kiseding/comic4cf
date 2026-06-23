@@ -197,7 +197,6 @@ export default function ComicDetailPage() {
                 }`}>
                 <span className="line-clamp-1 flex-1">{ch.title}</span>
                 <span className="flex items-center gap-2 shrink-0 ml-2">
-                  {isCurrent && <span className="text-[10px] text-[#6366f1] whitespace-nowrap">📖 继续</span>}
                   <span className="text-[10px] text-gray-400">{ch.order}</span>
                 </span>
               </Link>
