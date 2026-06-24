@@ -292,15 +292,26 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
         for (const url of d) {
           let imgUrl = url;
           if (imgUrl.startsWith("//")) imgUrl = "https:" + imgUrl;
-          // Proxy images through Worker so HTTP image.yymanhua.com works on HTTPS pages
-          allImages.push(proxyCover(imgUrl));
+          allImages.push(imgUrl);
         }
 
         if (page >= imageCount) break;
       }
 
       if (allImages.length === 0) {
-        throw new Error("未获取到任何图片");
+        // Fetch one page to see what ashx actually returns
+        let sampleBody = "";
+        try {
+          const sp = new URLSearchParams({ cid, page: "1", key: "", _cid: cid, _mid: mid, _dt: signDt, _sign: sign });
+          const sr = await fetch(`${altBase}/chapterimage.ashx?${sp}`, {
+            headers: { "User-Agent": "Mozilla/5.0", Referer: chapterUrl },
+            signal: AbortSignal.timeout(5000),
+          });
+          sampleBody = (await sr.text()).slice(0, 300);
+        } catch (e: any) {
+          sampleBody = `fetch_error: ${e.message}`;
+        }
+        throw new Error(`未获取到图片(sign=${sign?"有":"无"}, pages=${imageCount}). ashx返回: ${sampleBody}`);
       }
 
       return allImages;
