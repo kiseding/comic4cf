@@ -225,8 +225,19 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
     async getChapterImages(_comicId: string, chapter: { id: string; url: string; title: string }): Promise<string[]> {
       const chapterUrl = chapter.url || `${base}/m${chapter.id}/`;
 
-      // Use the same fetchHTML that works for search/detail pages
-      const html = await fetchHTML(chapterUrl, { headers: { Referer: altBase + "/" } });
+      // Fetch chapter page with full browser headers (fetchHTML's spread behavior can drop UA)
+      let html: string;
+      const chapterResp = await fetch(chapterUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "zh-CN,zh;q=0.9",
+          "Referer": `${altBase}/`,
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!chapterResp.ok) throw new Error(`获取章节页失败 HTTP ${chapterResp.status}`);
+      html = await chapterResp.text();
 
       const extractVar = (name: string): string => {
         const re = new RegExp(`var\\s+${name}\\s*=\\s*"([^"]*)"`);
