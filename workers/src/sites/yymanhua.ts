@@ -279,13 +279,13 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
         }
 
         const body = await resp.text();
-        // chapterimage.ashx returns packed JavaScript: eval(function(p,a,c,k,e,d){...})
-        // Execute it to get the d array containing image URLs
+        // chapterimage.ashx returns packed JavaScript: eval(function(p,a,c,k,e,d){...}('...'))
+        // The packed code assigns to global `d`. Use Function constructor to capture return value.
         let d: string[] = [];
         try {
-          d = (0, eval)(body) as string[];
+          d = new Function(body + "; return d;")() as string[];
         } catch {
-          // if eval fails, try regex fallback
+          // if Function fails, try regex fallback
           const imgMatches = body.matchAll(/"((?:https?:)?\/\/[^"]*\.(?:jpg|png|webp|jpeg)[^"]*)"/gi);
           for (const m of imgMatches) d.push(m[1]);
         }
