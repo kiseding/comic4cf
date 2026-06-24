@@ -224,7 +224,14 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
 
     async getChapterImages(_comicId: string, chapter: { id: string; url: string; title: string }): Promise<string[]> {
       const chapterUrl = chapter.url || `${base}/m${chapter.id}/`;
-      const html = await fetchHTML(chapterUrl, { headers: { Referer: altBase + "/" } });
+      console.log(`[${key}] Fetching chapter page: ${chapterUrl}`);
+
+      let html: string;
+      try {
+        html = await fetchHTML(chapterUrl, { headers: { Referer: altBase + "/" } });
+      } catch (e: any) {
+        throw new Error(`获取章节页失败: ${e?.message || e}`);
+      }
 
       const extractVar = (name: string): string => {
         const re = new RegExp(`var\\s+${name}\\s*=\\s*"([^"]*)"`);

@@ -369,9 +369,9 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
       total: rawImages.length,
       images: rawImages,
     });
-  } catch {
-    console.error("Chapter images fetch failed");
-    return c.json({ error: "服务暂时不可用" }, 502);
+  } catch (e: any) {
+    console.error("Chapter images fetch failed:", e?.message || e);
+    return c.json({ error: `服务暂时不可用: ${e?.message || "未知错误"}` }, 502);
   }
 });
 
