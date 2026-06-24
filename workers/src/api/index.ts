@@ -175,6 +175,42 @@ api.get("/sources", async (c) => {
   return c.json({ sources: getRegistry().getSearchableSources() });
 });
 
+// ========== Image proxy (for HTTP-only sources like yymanhua) ==========
+api.get("/proxy-image", async (c) => {
+  const url = c.req.query("url");
+  if (!url) return c.json({ error: "缺少url参数" }, 400);
+
+  // Only allow proxying from known domains
+  const allowed = ["cover.yymanhua.com", "image.yymanhua.com", "cover.xmanhua.com", "image.xmanhua.com"];
+  try {
+    const target = new URL(url);
+    if (!allowed.some(d => target.hostname === d)) {
+      return c.json({ error: "不允许的域名" }, 403);
+    }
+  } catch {
+    return c.json({ error: "无效URL" }, 400);
+  }
+
+  try {
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0", Referer: "https://yymanhua.com/" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) return c.json({ error: "图片获取失败" }, 502);
+    const buf = await resp.arrayBuffer();
+    const ct = resp.headers.get("content-type") || "image/jpeg";
+    return new Response(buf, {
+      headers: {
+        "Content-Type": ct,
+        "Cache-Control": "public, max-age=86400",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch {
+    return c.json({ error: "图片代理失败" }, 502);
+  }
+});
+
 // ========== Homepage ==========
 api.get("/homepage", async (c) => {
   const tag = c.req.query("tag") || "";

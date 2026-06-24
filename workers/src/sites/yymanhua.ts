@@ -17,6 +17,18 @@ interface MangabzConfig {
 function makeMangabzSource(cfg: MangabzConfig): SiteSource {
   const { key, displayName, tags, base, altBase, suffix } = cfg;
 
+  // Proxy HTTP-only CDN covers through the Worker so they work on HTTPS pages
+  const proxyCover = (url: string): string => {
+    if (!url) return "";
+    try {
+      const u = new URL(url);
+      if (u.hostname.includes("yymanhua.com") || u.hostname.includes("xmanhua.com")) {
+        return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+      }
+    } catch {}
+    return url;
+  };
+
   return {
     key,
     displayName,
@@ -79,7 +91,7 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
           author: "",
           description: "",
           url: `${base}/${comicId}${suffix}/`,
-          coverUrl: coverImg ? absolutizeURL(base, coverImg) : "",
+          coverUrl: proxyCover(coverImg ? absolutizeURL(base, coverImg) : ""),
           latestChapter: "",
         }));
       });
@@ -138,16 +150,17 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
         ""
       );
 
-      let coverUrl = absolutizeURL(altBase,
+      let coverUrl = proxyCover(absolutizeURL(altBase,
         $(".detail-info-cover img").first().attr("src") ||
         $(".detail-info-img img").first().attr("src") ||
         $("img.detail-info-cover").first().attr("src") ||
         $("img.mh-cover").first().attr("src") ||
         ""
-      );
-      if (!coverUrl || coverUrl === absolutizeURL(altBase, "")) {
+      ));
+      if (!coverUrl) {
         const coverDomain = altBase.replace(/https?:\/\/(www\.)?/, "cover.");
-        coverUrl = `https://${coverDomain}/2/${comicId}/cover.jpg`;
+        // cover.yymanhua.com only works over HTTP; proxy it through Worker
+        coverUrl = proxyCover(`http://${coverDomain}/2/${comicId}/cover.jpg`);
       }
 
       const statusText = cleanText(
