@@ -239,8 +239,8 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
         return m ? parseInt(m[1]) : 0;
       };
 
-      const cid = extractVar("YYMANHUA_CID") || chapter.id;
-      const mid = extractVar("YYMANHUA_MID") || _comicId;
+      const cid = String(extractNum("YYMANHUA_CID")) || chapter.id;
+      const mid = String(extractNum("YYMANHUA_MID")) || _comicId;
       const sign = extractVar("YYMANHUA_VIEWSIGN");
       const signDt = extractVar("YYMANHUA_VIEWSIGN_DT");
       const imageCount = extractNum("YYMANHUA_IMAGE_COUNT");
@@ -279,11 +279,21 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
         }
 
         const body = await resp.text();
-        const imgMatches = body.matchAll(/"((?:https?:)?\/\/[^"]*\.(?:jpg|png|webp|jpeg)[^"]*)"/gi);
-        for (const m of imgMatches) {
-          let imgUrl = m[1];
+        // chapterimage.ashx returns packed JavaScript: eval(function(p,a,c,k,e,d){...})
+        // Execute it to get the d array containing image URLs
+        let d: string[] = [];
+        try {
+          d = (0, eval)(body) as string[];
+        } catch {
+          // if eval fails, try regex fallback
+          const imgMatches = body.matchAll(/"((?:https?:)?\/\/[^"]*\.(?:jpg|png|webp|jpeg)[^"]*)"/gi);
+          for (const m of imgMatches) d.push(m[1]);
+        }
+        for (const url of d) {
+          let imgUrl = url;
           if (imgUrl.startsWith("//")) imgUrl = "https:" + imgUrl;
-          allImages.push(imgUrl);
+          // Proxy images through Worker so HTTP image.yymanhua.com works on HTTPS pages
+          allImages.push(proxyCover(imgUrl));
         }
 
         if (page >= imageCount) break;
