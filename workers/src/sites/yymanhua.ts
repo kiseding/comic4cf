@@ -224,11 +224,33 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
 
     async getChapterImages(_comicId: string, chapter: { id: string; url: string; title: string }): Promise<string[]> {
       const chapterUrl = chapter.url || `${base}/m${chapter.id}/`;
-      console.log(`[${key}] Fetching chapter page: ${chapterUrl}`);
+
+      // Use raw fetch with full browser headers to avoid yymanhua bot detection
+      const browserHeaders: Record<string, string> = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "DNT": "1",
+        "Referer": `${altBase}/`,
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+      };
 
       let html: string;
       try {
-        html = await fetchHTML(chapterUrl, { headers: { Referer: altBase + "/" } });
+        const resp = await fetch(chapterUrl, {
+          headers: browserHeaders,
+          signal: AbortSignal.timeout(15000),
+          cf: { cacheEverything: false },
+        } as any);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        html = await resp.text();
       } catch (e: any) {
         throw new Error(`获取章节页失败: ${e?.message || e}`);
       }
@@ -270,11 +292,17 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
 
         const resp = await fetch(`${imageBase}?${params.toString()}`, {
           headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            Referer: chapterUrl,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Referer": chapterUrl,
+            "X-Requested-With": "XMLHttpRequest",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
           },
           signal: AbortSignal.timeout(10000),
-        });
+        } as any);
 
         if (!resp.ok) {
           if (allImages.length > 0) break;
