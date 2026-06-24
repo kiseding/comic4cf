@@ -228,6 +228,7 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
       // Search and comic detail still work — use those for discovery,
       // then read on baozimh/zaimanhua which proxy images natively.
       throw new Error(`该源暂不支持章节阅读（服务器反爬限制）。请用包子漫画或再漫画源阅读。`);
+    },
   };
 }
 
