@@ -371,7 +371,7 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
     });
   } catch (e: any) {
     console.error("Chapter images fetch failed:", e?.message || e);
-    return c.json({ error: `服务暂时不可用: ${e?.message || "未知错误"}` }, 502);
+    return c.json({ error: e?.message || "服务暂时不可用", unavailable: true }, 200);
   }
 });
 
@@ -422,8 +422,9 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
         "X-Skipped-Images": String(skipped),
       },
     });
-  } catch {
-    return c.json({ error: "流获取失败" }, 502);
+  } catch (e: any) {
+    console.error("Stream fetch failed:", e?.message || e);
+    return c.json({ error: e?.message || "流获取失败", unavailable: true }, 200);
   }
 });
 
