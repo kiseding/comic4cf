@@ -181,10 +181,32 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
         });
       }
 
-      // Chapter list: disabled for yymanhua/xmanhua because CF Workers
-      // can't fetch chapter images (source site has anti-bot protection).
-      // Use these sources for search/discovery, read on baozimh/zaimanhua.
-      const chapters: ChapterItem[] = [];
+      // Chapter list from template API
+      const templateUrl = `${altBase}/template-${comicId}-s2/`;
+      let chapters: ChapterItem[] = [];
+      try {
+        const tmplHtml = await fetchHTML(templateUrl, { headers: { Referer: url } });
+        const $$ = parseHTML(tmplHtml);
+        const seen = new Set<string>();
+        $$("a.detail-list-form-item").each((_, el) => {
+          const href = $$(el).attr("href") || "";
+          const chMatch = href.match(/^\/m(\d+)\/$/);
+          if (!chMatch) return;
+          const chapterId = chMatch[1];
+          if (seen.has(chapterId)) return;
+          seen.add(chapterId);
+          let chapterTitle = cleanText($$(el).attr("title") || $$(el).text());
+          chapterTitle = chapterTitle.replace(/[（(]\d+\s*[Pp][)）]$/, "").trim();
+          chapters.push({
+            id: chapterId,
+            title: chapterTitle || `第${chapters.length + 1}话`,
+            url: `${base}/m${chapterId}/`,
+            order: chapters.length + 1,
+          });
+        });
+      } catch {
+        // Fallback: parse from manga detail page
+      }
 
       return t2sDeep({
         site: key,
@@ -201,11 +223,75 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
     },
 
     async getChapterImages(_comicId: string, chapter: { id: string; url: string; title: string }): Promise<string[]> {
-      // yymanhua/xmanhua are on Cloudflare with anti-bot protection.
-      // CF Workers cannot fetch chapter pages due to IP-based blocking.
-      // Search and comic detail still work — use those for discovery,
-      // then read on baozimh/zaimanhua which proxy images natively.
-      throw new Error(`该源暂不支持章节阅读（服务器反爬限制）。请用包子漫画或再漫画源阅读。`);
+      const chapterUrl = chapter.url || `${base}/m${chapter.id}/`;
+
+      // Use the same fetchHTML that works for search/detail pages
+      const html = await fetchHTML(chapterUrl, { headers: { Referer: altBase + "/" } });
+
+      const extractVar = (name: string): string => {
+        const re = new RegExp(`var\\s+${name}\\s*=\\s*"([^"]*)"`);
+        const m = html.match(re);
+        return m ? m[1] : "";
+      };
+      const extractNum = (name: string): number => {
+        const re = new RegExp(`var\\s+${name}\\s*=\\s*(\\d+)`);
+        const m = html.match(re);
+        return m ? parseInt(m[1]) : 0;
+      };
+
+      const cid = extractVar("YYMANHUA_CID") || chapter.id;
+      const mid = extractVar("YYMANHUA_MID") || _comicId;
+      const sign = extractVar("YYMANHUA_VIEWSIGN");
+      const signDt = extractVar("YYMANHUA_VIEWSIGN_DT");
+      const imageCount = extractNum("YYMANHUA_IMAGE_COUNT");
+
+      if (!sign || imageCount <= 0) {
+        throw new Error("无法获取章节签名或页数");
+      }
+
+      const allImages: string[] = [];
+
+      for (let page = 1; page <= Math.min(imageCount, 100); page++) {
+        const params = new URLSearchParams({
+          cid,
+          page: String(page),
+          key: "",
+          _cid: cid,
+          _mid: mid,
+          _dt: signDt,
+          _sign: sign,
+        });
+
+        const resp = await fetch(`${altBase}/chapterimage.ashx?${params.toString()}`, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            Referer: chapterUrl,
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (!resp.ok) {
+          if (allImages.length > 0) break;
+          throw new Error(`图片服务器返回 ${resp.status}`);
+        }
+
+        const body = await resp.text();
+        const imgMatches = body.matchAll(/"((?:https?:)?\/\/[^"]*\.(?:jpg|png|webp|jpeg)[^"]*)"/gi);
+        for (const m of imgMatches) {
+          let imgUrl = m[1];
+          if (imgUrl.startsWith("//")) imgUrl = "https:" + imgUrl;
+          allImages.push(imgUrl);
+        }
+
+        if (page >= imageCount) break;
+      }
+
+      if (allImages.length === 0) {
+        throw new Error("未获取到任何图片");
+      }
+
+      return allImages;
     },
   };
 }
