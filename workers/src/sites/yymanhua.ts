@@ -246,9 +246,7 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
       const imageCount = extractNum("YYMANHUA_IMAGE_COUNT");
 
       if (!sign || imageCount <= 0) {
-        // Dump page snippet for debugging
-        const snippet = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 500);
-        throw new Error(`无法获取章节签名(sign=${sign ? "有" : "无"}, pages=${imageCount}, cid=${cid}, mid=${mid}). 页面片段: ${snippet}`);
+        throw new Error("无法获取章节签名或页数");
       }
 
       const allImages: string[] = [];
@@ -280,12 +278,15 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
 
         const body = await resp.text();
         // chapterimage.ashx returns packed JavaScript: eval(function(p,a,c,k,e,d){...}('...'))
-        // The packed code assigns to global `d`. Use Function constructor to capture return value.
+        // The packed code assigns to global `d` via indirect eval. Capture from globalThis.
         let d: string[] = [];
         try {
-          d = new Function(body + "; return d;")() as string[];
+          const g = globalThis as Record<string, any>;
+          delete g.d;
+          (0, eval)(body);
+          if (Array.isArray(g.d)) d = g.d;
         } catch {
-          // if Function fails, try regex fallback
+          // fallback: try regex
           const imgMatches = body.matchAll(/"((?:https?:)?\/\/[^"]*\.(?:jpg|png|webp|jpeg)[^"]*)"/gi);
           for (const m of imgMatches) d.push(m[1]);
         }
@@ -299,19 +300,7 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
       }
 
       if (allImages.length === 0) {
-        // Fetch one page to see what ashx actually returns
-        let sampleBody = "";
-        try {
-          const sp = new URLSearchParams({ cid, page: "1", key: "", _cid: cid, _mid: mid, _dt: signDt, _sign: sign });
-          const sr = await fetch(`${altBase}/chapterimage.ashx?${sp}`, {
-            headers: { "User-Agent": "Mozilla/5.0", Referer: chapterUrl },
-            signal: AbortSignal.timeout(5000),
-          });
-          sampleBody = (await sr.text()).slice(0, 300);
-        } catch (e: any) {
-          sampleBody = `fetch_error: ${e.message}`;
-        }
-        throw new Error(`未获取到图片(sign=${sign?"有":"无"}, pages=${imageCount}). ashx返回: ${sampleBody}`);
+        throw new Error("未获取到任何图片");
       }
 
       return allImages;
