@@ -246,7 +246,9 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
       const imageCount = extractNum("YYMANHUA_IMAGE_COUNT");
 
       if (!sign || imageCount <= 0) {
-        throw new Error("无法获取章节签名或页数");
+        // Dump page snippet for debugging
+        const snippet = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 500);
+        throw new Error(`无法获取章节签名(sign=${sign ? "有" : "无"}, pages=${imageCount}, cid=${cid}, mid=${mid}). 页面片段: ${snippet}`);
       }
 
       const allImages: string[] = [];
