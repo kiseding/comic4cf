@@ -371,7 +371,7 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
     });
   } catch (e: any) {
     console.error("Chapter images fetch failed:", e?.message || e);
-    return c.json({ error: e?.message || "服务暂时不可用", unavailable: true }, 200);
+    return c.json({ error: e?.message || "服务暂时不可用", unavailable: true, images: [], total: 0 }, 200);
   }
 });
 
