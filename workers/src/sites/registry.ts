@@ -16,8 +16,8 @@ export interface SourceMeta {
 const SOURCES: SiteSource[] = [
   new BaoziManhuaSource(),
   new ZaiManhuaSource(),
-  new YymanhuaSource(),
-  new XmanhuaSource(),
+  YymanhuaSource,
+  XmanhuaSource,
 ];
 
 export class SiteRegistry {
