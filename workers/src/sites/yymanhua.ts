@@ -181,32 +181,10 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
         });
       }
 
-      // Chapter list from template API
-      const templateUrl = `${altBase}/template-${comicId}-s2/`;
-      let chapters: ChapterItem[] = [];
-      try {
-        const tmplHtml = await fetchHTML(templateUrl, { headers: { Referer: url } });
-        const $$ = parseHTML(tmplHtml);
-        const seen = new Set<string>();
-        $$("a.detail-list-form-item").each((_, el) => {
-          const href = $$(el).attr("href") || "";
-          const chMatch = href.match(/^\/m(\d+)\/$/);
-          if (!chMatch) return;
-          const chapterId = chMatch[1];
-          if (seen.has(chapterId)) return;
-          seen.add(chapterId);
-          let chapterTitle = cleanText($$(el).attr("title") || $$(el).text());
-          chapterTitle = chapterTitle.replace(/[（(]\d+\s*[Pp][)）]$/, "").trim();
-          chapters.push({
-            id: chapterId,
-            title: chapterTitle || `第${chapters.length + 1}话`,
-            url: `${base}/m${chapterId}/`,
-            order: chapters.length + 1,
-          });
-        });
-      } catch {
-        // Fallback: parse from manga detail page
-      }
+      // Chapter list: disabled for yymanhua/xmanhua because CF Workers
+      // can't fetch chapter images (source site has anti-bot protection).
+      // Use these sources for search/discovery, read on baozimh/zaimanhua.
+      const chapters: ChapterItem[] = [];
 
       return t2sDeep({
         site: key,
