@@ -17,22 +17,13 @@ interface MangabzConfig {
 // Manual unpacker for Dean Edwards packed JS (eval blocked in Cloudflare Workers)
 function unpackChapterImages(body: string, siteKey: string, page: number): string[] {
   // Extract payload from: eval(function(p,a,c,k,e,d){...}(PAYLOAD))
-  const payloadMatch = body.match(/eval\(function\(p,a,c,k,e,d\)\{[^}]+\}\((.+)\)\)?;?\s*$/s);
+  const payloadMatch = body.match(/'([^']*)',(\d+),(\d+),'([^']*)'\)\)?;?\s*$/s);
   if (!payloadMatch) {
     console.log("[" + siteKey + "] Page " + page + ": failed to match packed JS pattern");
     return [];
   }
 
-  // Parse the payload: ('code', radix, count, 'key1|key2|...')
-  // Use a simple approach: split by ',<number>,<number>,'
-  const payload = payloadMatch[1];
-  const parts = payload.match(/^'([^']*)',(\d+),(\d+),'([^']*)'$/);
-  if (!parts) {
-    console.log("[" + siteKey + "] Page " + page + ": failed to parse payload parts");
-    return [];
-  }
-
-  const [, packed, radixStr, countStr, keysStr] = parts;
+  const [, packed, radixStr, countStr, keysStr] = payloadMatch;
   const radix = parseInt(radixStr);
   const count = parseInt(countStr);
   const keys = keysStr.split("|");
