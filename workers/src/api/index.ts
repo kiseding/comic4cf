@@ -458,6 +458,8 @@ const proxyImageUrls = (urls: string[]): string[] => urls.map(url => {
 
 api.get("/comics/:site/:comicId/:chapterId", async (c) => {
   const { site, comicId, chapterId } = c.req.param();
+  const reqPage = parseInt(c.req.query("page") || "1") || 1;
+  const reqLimit = Math.min(parseInt(c.req.query("limit") || "30") || 30, 45);
   try {
     const rawImages = await getRegistry().getChapterImages(site, comicId, {
       id: chapterId,
