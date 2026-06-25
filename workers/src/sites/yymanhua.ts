@@ -302,11 +302,17 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
         // The packed code assigns to global `d` via indirect eval. Capture from globalThis.
         let d: string[] = [];
         try {
-          const g = globalThis as Record<string, any>;
-          delete g.d;
-          (0, eval)(body);
-          if (Array.isArray(g.d)) d = g.d;
-          else console.log(`[${key}] Page ${page}: eval OK but g.d is not array, typeof=${typeof g.d}`);
+          // ES module mode: var declarations in eval do NOT leak to globalThis.
+          // Capture the eval return value (last expression = d=dm5imagefun() = array).
+          const result = (0, eval)(body);
+          if (Array.isArray(result)) {
+            d = result;
+          } else {
+            // Fallback: check globalThis (works in script mode, unlikely in Workers)
+            const g = globalThis as Record<string, any>;
+            if (Array.isArray(g.d)) d = g.d;
+            else console.log(`[${key}] Page ${page}: eval returned ${typeof result}, globalThis.d = ${typeof g.d}`);
+          }
         } catch (e: any) {
           console.log(`[${key}] Page ${page}: eval failed (${e?.message || e}), trying regex fallback`);
           // fallback: try regex
