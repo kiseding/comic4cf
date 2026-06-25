@@ -4,7 +4,7 @@
 import type { SiteSource, SearchResult, ComicDetail, ResolvedURL, ChapterItem } from "../types";
 import { t2sDeep } from "../utils/zhconv";
 
-const API_BASE = "https://v4api.zaimanhua.com";
+const API_BASE = "https://www.zaimanhua.com";
 // Anonymous auth params embedded in the Nuxt SPA
 const AUTH = {
   channel: "pc",
