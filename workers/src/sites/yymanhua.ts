@@ -14,79 +14,45 @@ interface MangabzConfig {
   suffix: string;           // "yy" or "xm"
 }
 
-// Manual unpacker for Dean Edwards packed JS (eval blocked in Cloudflare Workers)
 function unpackChapterImages(body: string, siteKey: string, page: number): string[] {
-  // Extract payload from: eval(function(p,a,c,k,e,d){...}(PAYLOAD))
-  const payloadMatch = body.match(/\}\((.+),(\d+),(\d+),'([^']+)'\)\)\s*$/s);
-  if (!payloadMatch) {
-    console.log("[" + siteKey + "] Page " + page + ": failed to match packed JS pattern");
-    return [];
-  }
-
-  // Strip leading quote from packed code (captured by greedy .+)
-  const packed = payloadMatch[1].replace(/^'/, '');
-  const radixStr = payloadMatch[2];
-  const countStr = payloadMatch[3];
-  const keysStr = payloadMatch[4];
-  const radix = parseInt(radixStr);
-  const count = parseInt(countStr);
+  const payloadStart = body.lastIndexOf("}(");
+  if (payloadStart < 0) { console.log("[" + siteKey + "] Page " + page + ": no }( found"); return []; }
+  const payloadEnd = body.lastIndexOf("))");
+  if (payloadEnd < 0 || payloadEnd <= payloadStart) { console.log("[" + siteKey + "] Page " + page + ": no )) found"); return []; }
+  const payload = body.substring(payloadStart + 2, payloadEnd).trim();
+  const keyQuoteStart = payload.lastIndexOf(",'");
+  if (keyQuoteStart < 0) { console.log("[" + siteKey + "] Page " + page + ": no keys found"); return []; }
+  const keysStr = payload.substring(keyQuoteStart + 2).replace(/^'/, "").replace(/'$/, "");
+  const beforeKeys = payload.substring(0, keyQuoteStart);
+  const parts = beforeKeys.split(",");
+  if (parts.length < 3) { console.log("[" + siteKey + "] Page " + page + ": cannot parse radix/count"); return []; }
+  const radix = parseInt(parts[parts.length - 2]);
+  const count = parseInt(parts[parts.length - 1]);
+  const packedWithQuote = parts.slice(0, parts.length - 2).join(",");
+  const packed = packedWithQuote.replace(/^'/, "").replace(/'$/, "");
   const keys = keysStr.split("|");
-
-  // Build decode function (same as in the packer)
-  const decode = (c: number): string => {
-    if (c < radix) return "";
-    const s = decode(Math.floor(c / radix));
-    c = c % radix;
-    return s + (c > 35 ? String.fromCharCode(c + 29) : c.toString(36));
-  };
-
-  // Build dictionary: encoded token -> original word
+  if (isNaN(radix) || isNaN(count) || keys.length === 0) { console.log("[" + siteKey + "] Page " + page + ": invalid radix/count/keys"); return []; }
+  const decode = (c: number): string => { if (c < radix) return ""; const s = decode(Math.floor(c / radix)); c = c % radix; return s + (c > 35 ? String.fromCharCode(c + 29) : c.toString(36)); };
   const dict: Record<string, string> = {};
-  for (let i = 0; i < count; i++) {
-    const encoded = decode(i);
-    if (encoded) dict[encoded] = keys[i] || encoded;
-  }
-
-  // Unpack the code by replacing encoded tokens
+  for (let i = 0; i < count; i++) { const encoded = decode(i); if (encoded) dict[encoded] = keys[i] || encoded; }
   let unpacked = packed;
-  // Sort keys by length descending to avoid partial replacements
   const sortedTokens = Object.keys(dict).sort((a, b) => b.length - a.length);
-  for (const token of sortedTokens) {
-    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    unpacked = unpacked.replace(new RegExp(escaped, "g"), dict[token]);
-  }
-
+  for (const token of sortedTokens) { const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); unpacked = unpacked.replace(new RegExp(escaped, "g"), dict[token]); }
   console.log("[" + siteKey + "] Page " + page + ": unpacked code: " + unpacked.substring(0, 200));
-
-  // Extract image URLs from unpacked code
-  // Pattern: image domains or paths ending in common image extensions
-  const imgRegex = /(https?:\/\/[^"'\s]+\.(?:jpg|png|webp|jpeg|gif)[^"'\s]*)|("\/[^"]+\.(?:jpg|png|webp|jpeg)[^"]*")/gi;
-  const rawUrls: string[] = [];
-  let m;
-  while ((m = imgRegex.exec(unpacked)) !== null) {
-    rawUrls.push(m[1] || m[2].replace(/"/g, ""));
+  const pixMatch = unpacked.match(/pix\s*=\s*"([^"]+)"/);
+  const pathsMatch = unpacked.match(/pvalue\s*=\s*\[([^\]]+)\]/);
+  if (pixMatch && pathsMatch) {
+    const pix = pixMatch[1];
+    const pathStrs = pathsMatch[1].match(/"([^"]+)"/g);
+    if (pathStrs) { const urls: string[] = []; for (const ps of pathStrs) { const path = ps.replace(/"/g, ""); const suffixRe = new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\+['\"]([^'\"]*)['\"]"); const suffixMatch = unpacked.match(suffixRe); urls.push(pix + path + (suffixMatch ? suffixMatch[1] : "")); } return urls; }
   }
-
-  // If no full URLs found, try to reconstruct from pix variable
-  if (rawUrls.length === 0) {
-    const pixMatch = unpacked.match(/pix\s*=\s*"([^"]+)"/);
-    const pathsMatch = unpacked.match(/pvalue\s*=\s*\[([^\]]+)\]/);
-    if (pixMatch && pathsMatch) {
-      const pix = pixMatch[1];
-      const pathStrs = pathsMatch[1].match(/"([^"]+)"/g);
-      if (pathStrs) {
-        for (const ps of pathStrs) {
-          const path = ps.replace(/"/g, "");
-          const suffix = unpacked.match(new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\+['\"]([^'\"]+)['\"]"));
-          const qs = suffix ? suffix[1] : "";
-          rawUrls.push(pix + path + qs);
-        }
-      }
-    }
-  }
-
+  const imgRegex = /https?:\/\/[^"'\s]+\.(?:jpg|png|webp|jpeg|gif)[^"'\s]*/gi;
+  const rawUrls: string[] = []; let m; while ((m = imgRegex.exec(unpacked)) !== null) { rawUrls.push(m[0]); }
   return rawUrls;
 }
+
+
+
 
 function makeMangabzSource(cfg: MangabzConfig): SiteSource {
   const { key, displayName, tags, base, altBase, suffix } = cfg;
