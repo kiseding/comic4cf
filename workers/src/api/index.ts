@@ -352,6 +352,68 @@ api.get("/comics/:site/:comicId", async (c) => {
   } catch { console.error("Comic detail fetch failed"); return c.json({ error: "服务暂时不可用" }, 502); }
 });
 
+// ========== DEBUG chapterimage ==========
+
+api.get("/debug/chapterimage", async (c) => {
+  const site = c.req.query("site") || "yymanhua";
+  const chapterUrl = c.req.query("url") || "";
+  const altBase = site === "yymanhua" ? "http://yymanhua.com" : "https://xmanhua.com";
+  try {
+    const html = await fetch(chapterUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        Referer: altBase + "/",
+      },
+      signal: AbortSignal.timeout(15000),
+    }).then(r => r.text()).catch(e => "FETCH_ERROR: " + (e?.message || e));
+
+    const extractVar = (name: string): string => {
+      const re = new RegExp("(?:var|let|const)\\s+" + name + "\\s*=\\s*\"([^\"]*)\"");
+      const m = (typeof html === "string" ? html : "").match(re);
+      return m ? m[1] : "";
+    };
+    const extractNum = (name: string): number => {
+      const re = new RegExp("(?:var|let|const)\\s+" + name + "\\s*=\\s*(\\d+)");
+      const m = (typeof html === "string" ? html : "").match(re);
+      return m ? parseInt(m[1]) : 0;
+    };
+    const cid = extractNum("YYMANHUA_CID") || extractNum("MANGABZ_CID") || extractNum("MH_CID");
+    const mid = extractNum("YYMANHUA_MID") || extractNum("MANGABZ_MID") || extractNum("MH_MID");
+    const sign = extractVar("YYMANHUA_VIEWSIGN");
+    const signDt = extractVar("YYMANHUA_VIEWSIGN_DT");
+    const imageCount = extractNum("YYMANHUA_IMAGE_COUNT");
+
+    let ashxBody = "";
+    let ashxStatus = 0;
+    if (sign && imageCount > 0 && cid > 0) {
+      const params = new URLSearchParams({ cid: String(cid), page: "1", key: "", _cid: String(cid), _mid: String(mid), _dt: signDt, _sign: sign });
+      try {
+        const r = await fetch(altBase + "/chapterimage.ashx?" + params.toString(), {
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", Referer: chapterUrl, "X-Requested-With": "XMLHttpRequest" },
+          signal: AbortSignal.timeout(10000),
+        });
+        ashxStatus = r.status;
+        ashxBody = await r.text();
+      } catch (e: any) { ashxBody = "FETCH_ERROR: " + (e?.message || e); }
+    }
+
+    return c.json({
+      chapterUrl, altBase,
+      htmlLen: typeof html === "string" ? html.length : 0,
+      htmlHead: typeof html === "string" ? html.substring(0, 800) : html,
+      vars: { cid, mid, sign: sign ? sign.substring(0, 20) + "..." : "", signDt, imageCount },
+      ashxStatus,
+      ashxBodyLen: ashxBody.length,
+      ashxBodyHead: ashxBody.substring(0, 500),
+      ashxBodyTail: ashxBody.length > 500 ? ashxBody.substring(ashxBody.length - 300) : "",
+    });
+  } catch (e: any) {
+    return c.json({ error: e?.message || String(e) }, 500);
+  }
+});
+
 // ========== Chapter images ==========
 
 api.get("/comics/:site/:comicId/:chapterId", async (c) => {
