@@ -175,17 +175,26 @@ api.get("/sources", async (c) => {
   return c.json({ sources: getRegistry().getSearchableSources() });
 });
 
-// ========== Image proxy (for HTTP-only sources like yymanhua) ==========
+// ========== Image proxy (for CDN images that need proper Referer) ==========
 api.get("/proxy-image", async (c) => {
   const url = c.req.query("url");
   if (!url) return c.json({ error: "缺少url参数" }, 400);
 
   // Only allow proxying from known domains
-  const allowed = ["cover.yymanhua.com", "image.yymanhua.com", "cover.xmanhua.com", "image.xmanhua.com"];
+  const allowed = [
+    "cover.yymanhua.com", "image.yymanhua.com", "cover.xmanhua.com", "image.xmanhua.com",
+    "baozicdn.com", "bzcdn.net",
+  ];
+  let referer = "https://yymanhua.com/";
   try {
     const target = new URL(url);
-    if (!allowed.some(d => target.hostname === d)) {
+    const hostname = target.hostname;
+    const matched = allowed.find(d => hostname === d || hostname.endsWith("." + d));
+    if (!matched) {
       return c.json({ error: "不允许的域名" }, 403);
+    }
+    if (matched === "baozicdn.com" || matched === "bzcdn.net") {
+      referer = "https://www.baozimh.com/";
     }
   } catch {
     return c.json({ error: "无效URL" }, 400);
@@ -193,8 +202,12 @@ api.get("/proxy-image", async (c) => {
 
   try {
     const resp = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0", Referer: "https://yymanhua.com/" },
-      signal: AbortSignal.timeout(10000),
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        Referer: referer,
+        Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+      },
+      signal: AbortSignal.timeout(15000),
     });
     if (!resp.ok) return c.json({ error: "图片获取失败" }, 502);
     const buf = await resp.arrayBuffer();
@@ -435,8 +448,10 @@ api.get("/debug/chapterimage", async (c) => {
   }
 });
 
-// Convert image URLs from known CDN sources to proxy URLs so they work on HTTPS pages.
+// Convert image URLs from known CDN sources to proxy URLs so they go through the Worker
+// with proper Referer headers, avoiding Cloudflare hotlink challenges.
 // Cloudflare Workers cannot reach image.xmanhua.com; maps it to image.yymanhua.com (same content).
+const BAOZIMH_CDN = ["baozicdn.com", "bzcdn.net"];
 const proxyImageUrls = (urls: string[]): string[] => urls.map(url => {
   try {
     const u = new URL(url);
@@ -448,6 +463,11 @@ const proxyImageUrls = (urls: string[]): string[] => urls.map(url => {
       return "/api/proxy-image?url=" + encodeURIComponent(mapped);
     }
     if (["image.yymanhua.com", "cover.yymanhua.com"].includes(u.hostname) && u.protocol === "http:") {
+      return "/api/proxy-image?url=" + encodeURIComponent(url);
+    }
+    // Proxy baozimh CDN images so the Worker adds Referer: baozimh.com,
+    // preventing Cloudflare hotlink challenges on the CDN.
+    if (BAOZIMH_CDN.some(d => u.hostname === d || u.hostname.endsWith("." + d))) {
       return "/api/proxy-image?url=" + encodeURIComponent(url);
     }
   } catch {}
@@ -516,10 +536,24 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
     const signal = c.req.raw.signal;
     const stream = new ReadableStream({
       async start(controller) {
+        // Choose correct Referer for the comic source to avoid hotlink challenges
+        const REFERERS: Record<string, string> = {
+          baozimh: "https://www.baozimh.com/",
+          yymanhua: "https://yymanhua.com/",
+          zaimanhua: "https://www.zaimanhua.com/",
+        };
+        const referer = REFERERS[site] || "https://www.baozimh.com/";
         for (const url of rawImages) {
           if (signal.aborted) break;
           try {
-            const imgResp = await fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) });
+            const imgResp = await fetch(url, {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                Referer: referer,
+                Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+              },
+              signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+            });
             if (!imgResp.ok) { skipped++; continue; }
             const imgBuf = await imgResp.arrayBuffer();
             const ct = imgResp.headers.get("content-type") || "image/jpeg";
