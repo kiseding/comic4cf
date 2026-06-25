@@ -1,3 +1,73 @@
+function unpackChapterImages(body: string, siteKey: string, page: number): string[] {
+  const payloadStart = body.lastIndexOf("}(");
+  if (payloadStart < 0) { console.log("[" + siteKey + "] Page " + page + ": no }( found"); return []; }
+  const payloadEnd = body.lastIndexOf("))");
+  if (payloadEnd < 0 || payloadEnd <= payloadStart) { console.log("[" + siteKey + "] Page " + page + ": no )) found"); return []; }
+  const payload = body.substring(payloadStart + 2, payloadEnd).trim();
+  const keyQuoteStart = payload.lastIndexOf(",'");
+  if (keyQuoteStart < 0) { console.log("[" + siteKey + "] Page " + page + ": no keys found"); return []; }
+  const keysStr = payload.substring(keyQuoteStart + 2).replace(/^'/, "").replace(/'$/, "");
+  const beforeKeys = payload.substring(0, keyQuoteStart);
+  const parts = beforeKeys.split(",");
+  if (parts.length < 3) { console.log("[" + siteKey + "] Page " + page + ": cannot parse radix/count"); return []; }
+  const radix = parseInt(parts[parts.length - 2]);
+  const count = parseInt(parts[parts.length - 1]);
+  const packedWithQuote = parts.slice(0, parts.length - 2).join(",");
+  const packed = packedWithQuote.replace(/^'/, "").replace(/'$/, "");
+  const keys = keysStr.split("|");
+  if (isNaN(radix) || isNaN(count) || keys.length === 0) { console.log("[" + siteKey + "] Page " + page + ": invalid radix/count/keys"); return []; }
+
+  // Must use function declaration (not const arrow) for recursion
+  function decode(c: number): string {
+    if (c < radix) return "";
+    const s = decode(Math.floor(c / radix));
+    c = c % radix;
+    return s + (c > 35 ? String.fromCharCode(c + 29) : c.toString(36));
+  }
+
+  const dict: Record<string, string> = {};
+  for (let i = 0; i < count; i++) {
+    const encoded = decode(i);
+    if (encoded) dict[encoded] = keys[i] || encoded;
+  }
+
+  let unpacked = packed;
+  const sortedTokens = Object.keys(dict).sort((a, b) => b.length - a.length);
+  for (const token of sortedTokens) {
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    unpacked = unpacked.replace(new RegExp(escaped, "g"), dict[token]);
+  }
+
+  console.log("[" + siteKey + "] Page " + page + ": unpacked code: " + unpacked.substring(0, 200));
+
+  const pixMatch = unpacked.match(/pix\s*=\s*"([^"]+)"/);
+  const pathsMatch = unpacked.match(/pvalue\s*=\s*\[([^\]]+)\]/);
+  if (pixMatch && pathsMatch) {
+    const pix = pixMatch[1];
+    const pathStrs = pathsMatch[1].match(/"([^"]+)"/g);
+    if (pathStrs) {
+      const urls: string[] = [];
+      for (const ps of pathStrs) {
+        const path = ps.replace(/"/g, "");
+        const escapedPath = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const suffixRe = new RegExp(escapedPath + "\\+['\"]([^'\"]*)['\"]");
+        const suffixMatch = unpacked.match(suffixRe);
+        urls.push(pix + path + (suffixMatch ? suffixMatch[1] : ""));
+      }
+      return urls;
+    }
+  }
+
+  const imgRegex = /https?:\/\/[^"'\s]+\.(?:jpg|png|webp|jpeg|gif)[^"'\s]*/gi;
+  const rawUrls: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = imgRegex.exec(unpacked)) !== null) {
+    rawUrls.push(m[0]);
+  }
+  return rawUrls;
+}
+
+
 // yymanhua.com / xmanhua.com (mangabz 系列)
 // Manga detail: /<id>yy/ or /<id>xm/; Chapter: /m<id>/
 // Chapter list: /template-<mid>-s2/; Image API: chapterimage.ashx
