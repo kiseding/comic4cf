@@ -465,12 +465,17 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
       id: chapterId,
       url: c.req.query("url") || "",
       title: c.req.query("title") || "",
+      page: reqPage,
+      limit: reqLimit,
     });
 
     return c.json({
       id: chapterId,
       title: c.req.query("title") || "",
       total: rawImages.length,
+      page: reqPage,
+      limit: reqLimit,
+      hasMore: rawImages.length >= reqLimit * 2,
       images: proxyImageUrls(rawImages),
     });
   } catch (e: any) {
