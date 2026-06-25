@@ -335,14 +335,14 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
       };
 
       // Try multiple naming conventions (sites may rename variables over time)
-      const cidRaw = extractNum("YYMANHUA_CID") || extractNum("MANGABZ_CID") || extractNum("MH_CID");
-      const midRaw = extractNum("YYMANHUA_MID") || extractNum("MANGABZ_MID") || extractNum("MH_MID");
+      const cidRaw = extractNum("YYMANHUA_CID") || extractNum("XMANHUA_CID") || extractNum("MANGABZ_CID") || extractNum("MH_CID");
+      const midRaw = extractNum("YYMANHUA_MID") || extractNum("XMANHUA_MID") || extractNum("MANGABZ_MID") || extractNum("MH_MID");
       // Fix: extractNum returns 0 on failure, but String(0) is "0" (truthy!), nullify 0 explicitly
       const cid = cidRaw > 0 ? String(cidRaw) : chapter.id;
       const mid = midRaw > 0 ? String(midRaw) : _comicId;
-      const sign = extractVar("YYMANHUA_VIEWSIGN");
-      const signDt = extractVar("YYMANHUA_VIEWSIGN_DT");
-      const imageCount = extractNum("YYMANHUA_IMAGE_COUNT");
+      const sign = extractVar("YYMANHUA_VIEWSIGN") || extractVar("XMANHUA_VIEWSIGN");
+      const signDt = extractVar("YYMANHUA_VIEWSIGN_DT") || extractVar("XMANHUA_VIEWSIGN_DT");
+      const imageCount = extractNum("YYMANHUA_IMAGE_COUNT") || extractNum("XMANHUA_IMAGE_COUNT");
 
       // Diagnostic: log what we found for debugging
       console.log(`[${key}] Chapter ${chapter.id}: cid=${cid} mid=${mid} sign=${sign ? "found" : "MISSING"} dt=${signDt ? "found" : "MISSING"} imageCount=${imageCount}`);

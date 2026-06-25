@@ -379,11 +379,11 @@ api.get("/debug/chapterimage", async (c) => {
       const m = (typeof html === "string" ? html : "").match(re);
       return m ? parseInt(m[1]) : 0;
     };
-    const cid = extractNum("YYMANHUA_CID") || extractNum("MANGABZ_CID") || extractNum("MH_CID");
-    const mid = extractNum("YYMANHUA_MID") || extractNum("MANGABZ_MID") || extractNum("MH_MID");
-    const sign = extractVar("YYMANHUA_VIEWSIGN");
-    const signDt = extractVar("YYMANHUA_VIEWSIGN_DT");
-    const imageCount = extractNum("YYMANHUA_IMAGE_COUNT");
+    const cid = extractNum("YYMANHUA_CID") || extractNum("XMANHUA_CID") || extractNum("MANGABZ_CID") || extractNum("MH_CID");
+    const mid = extractNum("YYMANHUA_MID") || extractNum("XMANHUA_MID") || extractNum("MANGABZ_MID") || extractNum("MH_MID");
+    const sign = extractVar("YYMANHUA_VIEWSIGN") || extractVar("XMANHUA_VIEWSIGN");
+    const signDt = extractVar("YYMANHUA_VIEWSIGN_DT") || extractVar("XMANHUA_VIEWSIGN_DT");
+    const imageCount = extractNum("YYMANHUA_IMAGE_COUNT") || extractNum("XMANHUA_IMAGE_COUNT");
 
     let ashxBody = "";
     let ashxStatus = 0;
