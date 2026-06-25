@@ -17,13 +17,17 @@ interface MangabzConfig {
 // Manual unpacker for Dean Edwards packed JS (eval blocked in Cloudflare Workers)
 function unpackChapterImages(body: string, siteKey: string, page: number): string[] {
   // Extract payload from: eval(function(p,a,c,k,e,d){...}(PAYLOAD))
-  const payloadMatch = body.match(/'([^']*)',(\d+),(\d+),'([^']*)'\)\)?;?\s*$/s);
+  const payloadMatch = body.match(/\}\((.+),(\d+),(\d+),'([^']+)'\)\)\s*$/s);
   if (!payloadMatch) {
     console.log("[" + siteKey + "] Page " + page + ": failed to match packed JS pattern");
     return [];
   }
 
-  const [, packed, radixStr, countStr, keysStr] = payloadMatch;
+  // Strip leading quote from packed code (captured by greedy .+)
+  const packed = payloadMatch[1].replace(/^'/, '');
+  const radixStr = payloadMatch[2];
+  const countStr = payloadMatch[3];
+  const keysStr = payloadMatch[4];
   const radix = parseInt(radixStr);
   const count = parseInt(countStr);
   const keys = keysStr.split("|");
