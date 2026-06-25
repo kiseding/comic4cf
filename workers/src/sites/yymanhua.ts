@@ -404,7 +404,6 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
           allImages.push(imgUrl);
         }
 
-        if (page >= imageCount) break;
       }
 
       if (allImages.length === 0) {

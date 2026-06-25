@@ -46,7 +46,7 @@ export interface SiteSource {
   readonly tags: string[];
   search(keyword: string, limit: number): Promise<SearchResult[]>;
   getDetail(comicId: string): Promise<ComicDetail>;
-  getChapterImages(comicId: string, chapter: { id: string; url: string; title: string }): Promise<string[]>;
+  getChapterImages(comicId: string, chapter: { id: string; url: string; title: string; page?: number; limit?: number }): Promise<string[]>;
   getChapterImagesStream?(comicId: string, chapter: { id: string; url: string; title: string }): ReadableStream<Uint8Array> | Promise<ReadableStream<Uint8Array>>;
   resolveURL(url: string): ResolvedURL | null;
   // Optional: provide a recommendation list filtered by a category slug.

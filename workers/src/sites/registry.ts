@@ -92,7 +92,7 @@ export class SiteRegistry {
     return source.getDetail(comicId);
   }
 
-  async getChapterImages(siteKey: string, comicId: string, chapter: { id: string; url: string; title: string }): Promise<string[]> {
+  async getChapterImages(siteKey: string, comicId: string, chapter: { id: string; url: string; title: string; page?: number; limit?: number }): Promise<string[]> {
     const source = this.sources.get(siteKey);
     if (!source) throw new Error(`未找到书源: ${siteKey}`);
     return source.getChapterImages(comicId, chapter);
