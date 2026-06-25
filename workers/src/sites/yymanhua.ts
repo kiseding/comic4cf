@@ -42,7 +42,10 @@ function unpackChapterImages(body: string, siteKey: string, page: number): strin
 
   const pixMatch = unpacked.match(/pix\s*=\s*"([^"]+)"/);
   const pathsMatch = unpacked.match(/pvalue\s*=\s*\[([^\]]+)\]/);
-  if (pixMatch && pathsMatch) {
+
+  if (urls.length === 0) {
+    console.error("[" + siteKey + "] unpacked OK but no URLs extracted. pixMatch=" + !!pixMatch + " pathsMatch=" + !!pathsMatch + " unpacked=" + unpacked.substring(0, 300));
+  }  if (pixMatch && pathsMatch) {
     const pix = pixMatch[1];
     const pathStrs = pathsMatch[1].match(/"([^"]+)"/g);
     if (pathStrs) {
