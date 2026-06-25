@@ -435,6 +435,18 @@ api.get("/debug/chapterimage", async (c) => {
   }
 });
 
+// Convert HTTP image URLs from known sources to proxy URLs so they work on HTTPS pages
+const proxyImageUrls = (urls: string[]): string[] => urls.map(url => {
+  try {
+    const u = new URL(url);
+    const proxyDomains = ["image.yymanhua.com", "cover.yymanhua.com", "image.xmanhua.com", "cover.xmanhua.com"];
+    if (u.protocol === "http:" && proxyDomains.some(d => u.hostname === d)) {
+      return "/api/proxy-image?url=" + encodeURIComponent(url);
+    }
+  } catch {}
+  return url;
+});
+
 // ========== Chapter images ==========
 
 api.get("/comics/:site/:comicId/:chapterId", async (c) => {
@@ -450,7 +462,7 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
       id: chapterId,
       title: c.req.query("title") || "",
       total: rawImages.length,
-      images: rawImages,
+      images: proxyImageUrls(rawImages),
     });
   } catch (e: any) {
     console.error("Chapter images fetch failed:", e?.message || e);
