@@ -8,3 +8,4 @@ dist/
 .DS_Store
 frontend/vite.config.d.ts
 frontend/vite.config.js
+frontend/package-lock.json
