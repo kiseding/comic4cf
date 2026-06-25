@@ -1,3 +1,10 @@
+// yymanhua.com / xmanhua.com (mangabz 系列)
+// Manga detail: /<id>yy/ or /<id>xm/; Chapter: /m<id>/
+// Chapter list: /template-<mid>-s2/; Image API: chapterimage.ashx
+import type { SiteSource, SearchResult, ComicDetail, ResolvedURL, ChapterItem } from "../types";
+import { fetchHTML, parseHTML, absolutizeURL, cleanText } from "../utils/http";
+import { t2s, t2sDeep } from "../utils/zhconv";
+
 function unpackChapterImages(body: string, siteKey: string, page: number): string[] {
   const payloadStart = body.lastIndexOf("}(");
   if (payloadStart < 0) { console.log("[" + siteKey + "] Page " + page + ": no }( found"); return []; }
@@ -81,6 +88,15 @@ function unpackChapterImages(body: string, siteKey: string, page: number): strin
 }
 
 
+
+interface MangabzConfig {
+  key: string;
+  displayName: string;
+  tags: string[];
+  base: string;             // "http://www.yymanhua.com" or "https://www.xmanhua.com"
+  altBase: string;          // bare domain
+  suffix: string;           // "yy" or "xm"
+}
 
 function makeMangabzSource(cfg: MangabzConfig): SiteSource {
   const { key, displayName, tags, base, altBase, suffix } = cfg;
