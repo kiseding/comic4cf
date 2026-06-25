@@ -349,7 +349,7 @@ api.get("/comics/:site/:comicId", async (c) => {
     const detail = await getRegistry().getComicDetail(site, comicId);
     if (c.env.CACHE) { c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify(detail), { expirationTtl: 600 })); }
     return c.json(detail);
-  } catch { console.error("Comic detail fetch failed"); return c.json({ error: "服务暂时不可用" }, 502); }
+  } catch (e: any) { console.error("Comic detail fetch failed:", e?.message || e); return c.json({ error: e?.message || "服务暂不可用", unavailable: true }, 200); }
 });
 
 // ========== DEBUG chapterimage ==========
