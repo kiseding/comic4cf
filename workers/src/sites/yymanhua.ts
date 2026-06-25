@@ -306,7 +306,7 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
       });
     },
 
-    async getChapterImages(_comicId: string, chapter: { id: string; url: string; title: string }): Promise<string[]> {
+    async getChapterImages(_comicId: string, chapter: { id: string; url: string; title: string; page?: number; limit?: number }): Promise<string[]> {
       const chapterUrl = chapter.url || `${base}/m${chapter.id}/`;
 
       // Fetch chapter page — use fetchHTML for proper encoding (GBK/UTF-8) and UA rotation
@@ -356,7 +356,12 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
 
       const allImages: string[] = [];
 
-      for (let page = 1; page <= Math.min(imageCount, 45); page++) {
+      const reqPage = chapter.page || 1;
+      const reqLimit = Math.min(chapter.limit || 30, 45);
+      const startPage = (reqPage - 1) * reqLimit + 1;
+      const endPage = Math.min(startPage + reqLimit - 1, Math.min(imageCount, 100));
+
+      for (let page = startPage; page <= endPage; page++) {
         const params = new URLSearchParams({
           cid,
           page: String(page),

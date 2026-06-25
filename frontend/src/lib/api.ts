@@ -77,8 +77,8 @@ export async function getHomepage(tag?: string) {
 }
 export async function search(keyword: string, sites?: string[]) { return request<{ results?: SearchItem[]; urlSearch?: boolean; item?: SearchItem }>("/search", { method: "POST", body: JSON.stringify({ keyword, sites }) }); }
 export async function getComicDetail(site: string, comicId: string) { return request<ComicDetail>(`/comics/${site}/${comicId}`); }
-export async function getChapterImages(site: string, comicId: string, chapterId: string, title: string, url: string) {
-  const data = await request<ChapterImages & { error?: string; unavailable?: boolean }>(`/comics/${site}/${comicId}/${chapterId}?${new URLSearchParams({ title, url })}`);
+export async function getChapterImages(site: string, comicId: string, chapterId: string, title: string, url: string, page = 1, limit = 30) {
+  const data = await request<ChapterImages & { error?: string; unavailable?: boolean }>(`/comics/${site}/${comicId}/${chapterId}?${new URLSearchParams({ title, url, page: String(page), limit: String(limit) })}`);
   if (data.unavailable) throw new Error(data.error || "该章节暂不可用");
   return data;
 }

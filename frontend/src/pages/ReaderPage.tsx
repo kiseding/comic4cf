@@ -98,6 +98,77 @@ export default function ReaderPage() {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     setLoading(true); setError("");
 
+    (async () => {
+      const PAGE_SIZE = 30;
+      let allImgs: string[] = [];
+      let pg = 1;
+      let hasMore = true;
+      while (hasMore) {
+        try {
+          const batch = await api.getChapterImages(site, comicId, chapterId, chapterTitle, chapterUrl, pg, PAGE_SIZE);
+          if (pg === 1) { setTitle(batch.title); prevTitle.current = batch.title; }
+          allImgs = allImgs.concat(batch.images);
+          if (stale) return;
+          setImages([...allImgs]);
+          prevImages.current = allImgs;
+          if (pg === 1) setLoading(false);
+          if (batch.images.length < PAGE_SIZE) { hasMore = false; break; }
+          pg++;
+        } catch (err: any) {
+          hasMore = false;
+          if (pg === 1) throw err;
+          break;
+        }
+      }
+      if (allImgs.length === 0) { setLoading(false); return; }
+      setCache(cacheKey, { images: allImgs, title: prevTitle.current });
+      const displayTitle = prevTitle.current || chapterTitle;
+      if (recordedRef.current !== chapterId) {
+        api.addHistory({ site, comicId, title: comicName || comicTitle, author: "", coverUrl: "", chapterId, chapterTitle: displayTitle }).then(() => { recordedRef.current = chapterId; }).catch(() => {});
+      }
+      const idx = chaptersRef.current.findIndex(c => c.id === chapterId);
+      if (idx >= 0) api.updateProgress(site!, comicId!, idx, chapterId!, displayTitle, { title: comicName || comicTitle }).catch(() => {});
+    })().catch((err: any) => {
+      if (!stale) setError(err.message || "Failed");
+      setLoading(false);
+    });});
+    }, 3000);
+    return () => clearInterval(t);
+  }, [images.length]);
+
+  const handleLoad = () => {
+    setLoadedCount(prev => Math.min(prev + 1, images.length));
+  };
+
+  // Fetch chapter images
+  useEffect(() => {
+    if (!site || !comicId || !chapterId) return;
+    let stale = false;
+    const cacheKey = `${site}/${comicId}/${chapterId}`;
+
+    const cached = chapterCacheRef.current.get(cacheKey);
+    if (cached) {
+      prevImages.current = cached.images;
+      prevTitle.current = cached.title;
+      setImages(cached.images);
+      setTitle(cached.title);
+      setLoading(false);
+      requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = 0;
+      });
+      if (recordedRef.current !== chapterId) {
+        api.addHistory({ site, comicId, title: comicName || comicTitle, author: "", coverUrl: "", chapterId, chapterTitle: cached.title }).then(() => { recordedRef.current = chapterId; }).catch(() => {});
+        const idx = chaptersRef.current.findIndex(c => c.id === chapterId);
+        if (idx >= 0) api.updateProgress(site!, comicId!, idx, chapterId!, cached.title, { title: comicName || comicTitle }).catch(() => {});
+      }
+      return;
+    }
+
+    prevImages.current = [];
+    setImages([]);
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    setLoading(true); setError("");
+
     api.getChapterImages(site, comicId, chapterId, chapterTitle, chapterUrl)
       .then(r => {
         if (stale) return;
