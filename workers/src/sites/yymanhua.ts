@@ -306,10 +306,16 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
           delete g.d;
           (0, eval)(body);
           if (Array.isArray(g.d)) d = g.d;
-        } catch {
+          else console.log(`[${key}] Page ${page}: eval OK but g.d is not array, typeof=${typeof g.d}`);
+        } catch (e: any) {
+          console.log(`[${key}] Page ${page}: eval failed (${e?.message || e}), trying regex fallback`);
           // fallback: try regex
           const imgMatches = body.matchAll(/"((?:https?:)?\/\/[^"]*\.(?:jpg|png|webp|jpeg)[^"]*)"/gi);
           for (const m of imgMatches) d.push(m[1]);
+        }
+        if (page === 1) {
+          console.log(`[${key}] Page 1 body preview (first 300 chars): ${body.substring(0, 300).replace(/\s+/g, " ")}`);
+          console.log(`[${key}] Page 1 extracted ${d.length} URLs`);
         }
         for (const url of d) {
           let imgUrl = url;
