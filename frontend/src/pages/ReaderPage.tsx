@@ -104,12 +104,14 @@ export default function ReaderPage() {
       let p = 1; let more = true;
       while (more) {
         const r = await api.getChapterImages(site, comicId, chapterId, chapterTitle, chapterUrl, p, SIZE);
-        if (p === 1) { setTitle(r.title); prevTitle.current = r.title; }
-        for (const img of r.images) all.push(img);
+        if (p === 1) { setTitle(r.title || ""); prevTitle.current = r.title || ""; }
+        const imgs = r.images || [];
+        for (const img of imgs) all.push(img);
         if (stale) return;
         setImages([...all]); prevImages.current = all;
         if (p === 1) setLoading(false);
-        more = r.hasMore;
+        more = !!(r.hasMore) && imgs.length > 0;
+        if (imgs.length === 0 && p > 1) more = false;
         p++;
       }
       if (all.length === 0) { setLoading(false); return; }
