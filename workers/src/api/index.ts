@@ -436,16 +436,13 @@ api.get("/debug/chapterimage", async (c) => {
 });
 
 // Convert image URLs from known CDN sources to proxy URLs so they work on HTTPS pages.
-// xmanhua CDN (image.xmanhua.com) does not respond; use yymanhua CDN instead (same server).
+// Both yymanhua and xmanhua CDNs only serve over HTTP; Worker proxies them to HTTPS.
 const proxyImageUrls = (urls: string[]): string[] => urls.map(url => {
   try {
     const u = new URL(url);
-    if (u.hostname === "image.xmanhua.com" || u.hostname === "cover.xmanhua.com") {
-      const mapped = url.replace(/image.xmanhua.com/g, "image.yymanhua.com").replace(/cover.xmanhua.com/g, "cover.yymanhua.com").replace(/^https:/, "http:");
-      return "/api/proxy-image?url=" + encodeURIComponent(mapped);
-    }
-    if ((u.hostname === "image.yymanhua.com" || u.hostname === "cover.yymanhua.com") && u.protocol === "http:") {
-      return "/api/proxy-image?url=" + encodeURIComponent(url);
+    if (["image.yymanhua.com", "cover.yymanhua.com", "image.xmanhua.com", "cover.xmanhua.com"].includes(u.hostname)) {
+      const httpUrl = url.replace(/^https:/, "http:");
+      return "/api/proxy-image?url=" + encodeURIComponent(httpUrl);
     }
   } catch {}
   return url;
