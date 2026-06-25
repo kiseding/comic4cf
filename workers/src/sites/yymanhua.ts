@@ -14,6 +14,85 @@ interface MangabzConfig {
   suffix: string;           // "yy" or "xm"
 }
 
+// Manual unpacker for Dean Edwards packed JS (eval blocked in Cloudflare Workers)
+function unpackChapterImages(body: string, siteKey: string, page: number): string[] {
+  // Extract payload from: eval(function(p,a,c,k,e,d){...}(PAYLOAD))
+  const payloadMatch = body.match(/eval\(function\(p,a,c,k,e,d\)\{[^}]+\}\((.+)\)\)?;?\s*$/s);
+  if (!payloadMatch) {
+    console.log("[" + siteKey + "] Page " + page + ": failed to match packed JS pattern");
+    return [];
+  }
+
+  // Parse the payload: ('code', radix, count, 'key1|key2|...')
+  // Use a simple approach: split by ',<number>,<number>,'
+  const payload = payloadMatch[1];
+  const parts = payload.match(/^'([^']*)',(\d+),(\d+),'([^']*)'$/);
+  if (!parts) {
+    console.log("[" + siteKey + "] Page " + page + ": failed to parse payload parts");
+    return [];
+  }
+
+  const [, packed, radixStr, countStr, keysStr] = parts;
+  const radix = parseInt(radixStr);
+  const count = parseInt(countStr);
+  const keys = keysStr.split("|");
+
+  // Build decode function (same as in the packer)
+  const decode = (c: number): string => {
+    if (c < radix) return "";
+    const s = decode(Math.floor(c / radix));
+    c = c % radix;
+    return s + (c > 35 ? String.fromCharCode(c + 29) : c.toString(36));
+  };
+
+  // Build dictionary: encoded token -> original word
+  const dict: Record<string, string> = {};
+  for (let i = 0; i < count; i++) {
+    const encoded = decode(i);
+    if (encoded) dict[encoded] = keys[i] || encoded;
+  }
+
+  // Unpack the code by replacing encoded tokens
+  let unpacked = packed;
+  // Sort keys by length descending to avoid partial replacements
+  const sortedTokens = Object.keys(dict).sort((a, b) => b.length - a.length);
+  for (const token of sortedTokens) {
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    unpacked = unpacked.replace(new RegExp(escaped, "g"), dict[token]);
+  }
+
+  console.log("[" + siteKey + "] Page " + page + ": unpacked code: " + unpacked.substring(0, 200));
+
+  // Extract image URLs from unpacked code
+  // Pattern: image domains or paths ending in common image extensions
+  const imgRegex = /(https?:\/\/[^"'\s]+\.(?:jpg|png|webp|jpeg|gif)[^"'\s]*)|("\/[^"]+\.(?:jpg|png|webp|jpeg)[^"]*")/gi;
+  const rawUrls: string[] = [];
+  let m;
+  while ((m = imgRegex.exec(unpacked)) !== null) {
+    rawUrls.push(m[1] || m[2].replace(/"/g, ""));
+  }
+
+  // If no full URLs found, try to reconstruct from pix variable
+  if (rawUrls.length === 0) {
+    const pixMatch = unpacked.match(/pix\s*=\s*"([^"]+)"/);
+    const pathsMatch = unpacked.match(/pvalue\s*=\s*\[([^\]]+)\]/);
+    if (pixMatch && pathsMatch) {
+      const pix = pixMatch[1];
+      const pathStrs = pathsMatch[1].match(/"([^"]+)"/g);
+      if (pathStrs) {
+        for (const ps of pathStrs) {
+          const path = ps.replace(/"/g, "");
+          const suffix = unpacked.match(new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\+['\"]([^'\"]+)['\"]"));
+          const qs = suffix ? suffix[1] : "";
+          rawUrls.push(pix + path + qs);
+        }
+      }
+    }
+  }
+
+  return rawUrls;
+}
+
 function makeMangabzSource(cfg: MangabzConfig): SiteSource {
   const { key, displayName, tags, base, altBase, suffix } = cfg;
 
@@ -300,22 +379,13 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
         const body = await resp.text();
         // chapterimage.ashx returns packed JavaScript: eval(function(p,a,c,k,e,d){...}('...'))
         // The packed code assigns to global `d` via indirect eval. Capture from globalThis.
+        // chapterimage.ashx returns Dean Edwards packed JS: eval(function(p,a,c,k,e,d){...}(...))
+        // eval is blocked in Cloudflare Workers, so we manually unpack the packed code.
         let d: string[] = [];
         try {
-          // ES module mode: var declarations in eval do NOT leak to globalThis.
-          // Capture the eval return value (last expression = d=dm5imagefun() = array).
-          const result = (0, eval)(body);
-          if (Array.isArray(result)) {
-            d = result;
-          } else {
-            // Fallback: check globalThis (works in script mode, unlikely in Workers)
-            const g = globalThis as Record<string, any>;
-            if (Array.isArray(g.d)) d = g.d;
-            else console.log(`[${key}] Page ${page}: eval returned ${typeof result}, globalThis.d = ${typeof g.d}`);
-          }
+          d = unpackChapterImages(body, key, page);
         } catch (e: any) {
-          console.log(`[${key}] Page ${page}: eval failed (${e?.message || e}), trying regex fallback`);
-          // fallback: try regex
+          console.log(`[${key}] Page ${page}: unpack failed (${e?.message || e}), trying regex fallback`);
           const imgMatches = body.matchAll(/"((?:https?:)?\/\/[^"]*\.(?:jpg|png|webp|jpeg)[^"]*)"/gi);
           for (const m of imgMatches) d.push(m[1]);
         }
