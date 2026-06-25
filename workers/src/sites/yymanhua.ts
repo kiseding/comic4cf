@@ -424,13 +424,3 @@ export const YymanhuaSource: SiteSource = makeMangabzSource({
   altBase: "http://yymanhua.com",
   suffix: "yy",
 });
-
-export const XmanhuaSource: SiteSource = makeMangabzSource({
-  key: "xmanhua",
-  displayName: "X漫画",
-  tags: ["中文", "日漫", "繁體"],
-  base: "https://www.xmanhua.com",
-  altBase: "https://xmanhua.com",
-  suffix: "xm",
-});
-

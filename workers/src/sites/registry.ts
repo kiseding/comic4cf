@@ -4,7 +4,7 @@ export type { SearchResult };
 
 import { BaoziManhuaSource } from "./baozimanhua";
 import { ZaiManhuaSource } from "./zaimanhua";
-import { YymanhuaSource, XmanhuaSource } from "./yymanhua";
+import { YymanhuaSource } from "./yymanhua";
 
 export interface SourceMeta {
   key: string;
@@ -17,7 +17,6 @@ const SOURCES: SiteSource[] = [
   new BaoziManhuaSource(),
   new ZaiManhuaSource(),
   YymanhuaSource,
-  XmanhuaSource,
 ];
 
 export class SiteRegistry {
