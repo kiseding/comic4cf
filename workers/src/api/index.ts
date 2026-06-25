@@ -408,6 +408,27 @@ api.get("/debug/chapterimage", async (c) => {
       ashxBodyLen: ashxBody.length,
       ashxBodyHead: ashxBody.substring(0, 500),
       ashxBodyTail: ashxBody.length > 500 ? ashxBody.substring(ashxBody.length - 300) : "",
+
+      // Test manual unpacking
+      unpackedPreview: (() => {
+        try {
+          const m = ashxBody.match(/\x27([^\x27]*)\x27,(\d+),(\d+),\x27([^\x27]*)\x27\)\)?;?\s*$/s);
+          if (!m) return "NO MATCH";
+          const [, pkd, rad, cnt, kys] = m;
+          const radix = parseInt(rad);
+          const keys = kys.split("|");
+          const decode = (c: number): string => {
+            if (c < radix) return "";
+            return decode(Math.floor(c / radix)) + (c % radix > 35 ? String.fromCharCode(c % radix + 29) : (c % radix).toString(36));
+          };
+          const dict: Record<string,string> = {};
+          for (let i = 0; i < parseInt(cnt); i++) { const enc = decode(i); if (enc) dict[enc] = keys[i] || enc; }
+          let upk = pkd;
+          const toks = Object.keys(dict).sort((a,b) => b.length - a.length);
+          for (const t of toks) upk = upk.replace(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"), dict[t]);
+          return upk.substring(0, 500);
+        } catch (e: any) { return "ERROR: " + (e?.message || e); }
+      })(),
     });
   } catch (e: any) {
     return c.json({ error: e?.message || String(e) }, 500);
