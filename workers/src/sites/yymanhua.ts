@@ -225,39 +225,49 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
     async getChapterImages(_comicId: string, chapter: { id: string; url: string; title: string }): Promise<string[]> {
       const chapterUrl = chapter.url || `${base}/m${chapter.id}/`;
 
-      // Fetch chapter page with full browser headers (fetchHTML's spread behavior can drop UA)
+      // Fetch chapter page — use fetchHTML for proper encoding (GBK/UTF-8) and UA rotation
       let html: string;
-      const chapterResp = await fetch(chapterUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "zh-CN,zh;q=0.9",
-          "Referer": `${altBase}/`,
-        },
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!chapterResp.ok) throw new Error(`获取章节页失败 HTTP ${chapterResp.status}`);
-      html = await chapterResp.text();
+      try {
+        html = await fetchHTML(chapterUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Referer": `${altBase}/`,
+          },
+        });
+      } catch (e: any) {
+        throw new Error(`获取章节页失败: ${e?.message || e}`);
+      }
 
       const extractVar = (name: string): string => {
-        const re = new RegExp(`var\\s+${name}\\s*=\\s*"([^"]*)"`);
+        const re = new RegExp(`(?:var|let|const)\\s+${name}\\s*=\\s*"([^"]*)"`);
         const m = html.match(re);
         return m ? m[1] : "";
       };
       const extractNum = (name: string): number => {
-        const re = new RegExp(`var\\s+${name}\\s*=\\s*(\\d+)`);
+        const re = new RegExp(`(?:var|let|const)\\s+${name}\\s*=\\s*(\\d+)`);
         const m = html.match(re);
         return m ? parseInt(m[1]) : 0;
       };
 
-      const cid = String(extractNum("YYMANHUA_CID")) || chapter.id;
-      const mid = String(extractNum("YYMANHUA_MID")) || _comicId;
+      // Try multiple naming conventions (sites may rename variables over time)
+      const cidRaw = extractNum("YYMANHUA_CID") || extractNum("MANGABZ_CID") || extractNum("MH_CID");
+      const midRaw = extractNum("YYMANHUA_MID") || extractNum("MANGABZ_MID") || extractNum("MH_MID");
+      // Fix: extractNum returns 0 on failure, but String(0) is "0" (truthy!), nullify 0 explicitly
+      const cid = cidRaw > 0 ? String(cidRaw) : chapter.id;
+      const mid = midRaw > 0 ? String(midRaw) : _comicId;
       const sign = extractVar("YYMANHUA_VIEWSIGN");
       const signDt = extractVar("YYMANHUA_VIEWSIGN_DT");
       const imageCount = extractNum("YYMANHUA_IMAGE_COUNT");
 
+      // Diagnostic: log what we found for debugging
+      console.log(`[${key}] Chapter ${chapter.id}: cid=${cid} mid=${mid} sign=${sign ? "found" : "MISSING"} dt=${signDt ? "found" : "MISSING"} imageCount=${imageCount}`);
+
       if (!sign || imageCount <= 0) {
-        throw new Error("无法获取章节签名或页数");
+        // Include a snippet of the HTML for debugging
+        const snippet = html.substring(0, 500).replace(/\s+/g, " ");
+        console.error(`[${key}] Var extraction failed. sign="${sign}" imageCount=${imageCount}. HTML head: ${snippet}`);
+        throw new Error("无法获取章节签名或页数（站点可能已更新反爬机制）");
       }
 
       const allImages: string[] = [];
@@ -336,3 +346,4 @@ export const XmanhuaSource: SiteSource = makeMangabzSource({
   altBase: "https://xmanhua.com",
   suffix: "xm",
 });
+
