@@ -356,7 +356,7 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
 
       const allImages: string[] = [];
 
-      for (let page = 1; page <= Math.min(imageCount, 100); page++) {
+      for (let page = 1; page <= Math.min(imageCount, 45); page++) {
         const params = new URLSearchParams({
           cid,
           page: String(page),
