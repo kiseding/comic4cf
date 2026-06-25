@@ -412,22 +412,28 @@ api.get("/debug/chapterimage", async (c) => {
       // Test manual unpacking
       unpackedPreview: (() => {
         try {
-          const m = ashxBody.match(/\x27([^\x27]*)\x27,(\d+),(\d+),\x27([^\x27]*)\x27\)\)?;?\s*$/s);
-          if (!m) return "NO MATCH";
-          const [, pkd, rad, cnt, kys] = m;
-          const radix = parseInt(rad);
-          const keys = kys.split("|");
-          const decode = (c: number): string => {
-            if (c < radix) return "";
-            return decode(Math.floor(c / radix)) + (c % radix > 35 ? String.fromCharCode(c % radix + 29) : (c % radix).toString(36));
-          };
-          const dict: Record<string,string> = {};
-          for (let i = 0; i < parseInt(cnt); i++) { const enc = decode(i); if (enc) dict[enc] = keys[i] || enc; }
-          let upk = pkd;
-          const toks = Object.keys(dict).sort((a,b) => b.length - a.length);
-          for (const t of toks) upk = upk.replace(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"), dict[t]);
-          return upk.substring(0, 500);
-        } catch (e: any) { return "ERROR: " + (e?.message || e); }
+          const body = ashxBody;
+          const ps = body.lastIndexOf("}(");
+          const pe = body.lastIndexOf("))");
+          if (ps<0||pe<0||pe<=ps) return "ps="+ps+" pe="+pe;
+          const payload = body.substring(ps+2,pe).trim();
+          const kqs = payload.lastIndexOf(",'");
+          if (kqs<0) return "kqs="+kqs+" payload="+payload.substring(0,100);
+          const keysStr = payload.substring(kqs+2).replace(/^'/,"").replace(/'$/,"");
+          const before = payload.substring(0,kqs);
+          const pts = before.split(",");
+          if (pts.length<3) return "pts.len="+pts.length;
+          const radix=parseInt(pts[pts.length-2]), count=parseInt(pts[pts.length-1]);
+          const packed = pts.slice(0,pts.length-2).join(",").replace(/^'/,"").replace(/'$/,"");
+          const keys = keysStr.split("|");
+          function decode(c:number):string{if(c<radix)return"";const s=decode(Math.floor(c/radix));c=c%radix;return s+(c>35?String.fromCharCode(c+29):c.toString(36))}
+          const dict:Record<string,string>={};
+          for(let i=0;i<count;i++){const e=decode(i);if(e)dict[e]=keys[i]||e}
+          let upk=packed;
+          const toks=Object.keys(dict).sort((a,b)=>b.length-a.length);
+          for(const t of toks){upk=upk.replace(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"),dict[t])}
+          return { radix, count, keysCount: keys.length, unpacked: upk.substring(0,500), packedLen: packed.length };
+        } catch(e:any){return "ERR:"+(e?.message||e)}
       })(),
     });
   } catch (e: any) {
