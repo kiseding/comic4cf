@@ -457,21 +457,19 @@ const proxyImageUrls = (urls: string[]): string[] => urls.map(url => {
 
 // ========== DEBUG connectivity ==========
 api.get("/debug/connectivity", async (c) => {
-  const targets = [
-    "https://www.zaimanhua.com",
-    "https://v4api.zaimanhua.com",
-    "https://manhua.zaimanhua.com",
-  ];
-  const results: Record<string, string> = {};
-  for (const url of targets) {
-    try {
-      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(8000) });
-      results[url] = "HTTP " + r.status;
-    } catch (e: any) {
-      results[url] = "ERROR: " + (e?.message || e);
-    }
+  const apiUrl = "https://www.zaimanhua.com/api/v1/comic1/comic/detail?channel=pc&app_name=zmh&version=1.0.0&timestamp=" + Date.now() + "&uid=113119197&comic_py=guimiezhiquan";
+  try {
+    const r = await fetch(apiUrl, {
+      headers: { "User-Agent": "Mozilla/5.0", Referer: "https://www.zaimanhua.com/" },
+      signal: AbortSignal.timeout(15000),
+    });
+    const text = await r.text();
+    let json: any = null;
+    try { json = JSON.parse(text); } catch {}
+    return c.json({ status: r.status, bodyPreview: text.substring(0, 500), json });
+  } catch (e: any) {
+    return c.json({ error: e?.message || String(e) }, 500);
   }
-  return c.json(results);
 });
 
 // ========== Chapter images ==========
