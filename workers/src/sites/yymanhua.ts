@@ -415,7 +415,18 @@ function makeMangabzSource(cfg: MangabzConfig): SiteSource {
         throw new Error("未获取到任何图片");
       }
 
-      return allImages;
+      // Deduplicate: chapterimage.ashx?page=N returns 2 images starting at index N,
+      // so consecutive pages overlap by 1 image. Remove duplicates while preserving order.
+      const seen = new Set<string>();
+      const uniqueImages: string[] = [];
+      for (const url of allImages) {
+        if (!seen.has(url)) {
+          seen.add(url);
+          uniqueImages.push(url);
+        }
+      }
+
+      return uniqueImages;
     },
   };
 }
