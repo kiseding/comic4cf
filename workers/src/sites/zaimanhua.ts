@@ -1,10 +1,10 @@
 // www.zaimanhua.com (再漫画)
-// API base: https://manhua.zaimanhua.com
+// API base: https://v4api.zaimanhua.com
 // ComicId format: pinyin name (e.g. "beats"), numeric ID fetched from detail API internally.
 import type { SiteSource, SearchResult, ComicDetail, ResolvedURL, ChapterItem } from "../types";
 import { t2sDeep } from "../utils/zhconv";
 
-const API_BASE = "https://www.zaimanhua.com";
+const API_BASE = "https://v4api.zaimanhua.com";
 // Anonymous auth params embedded in the Nuxt SPA
 const AUTH = {
   channel: "pc",
@@ -24,15 +24,31 @@ function apiParams(extra: Record<string, string | number>): string {
   return p.toString();
 }
 
-async function apiGet<T>(path: string, params: Record<string, string | number>): Promise<T> {
+async function apiGet<T>(path: string, params: Record<string, string | number>, retries = 2): Promise<T> {
   const url = `${API_BASE}${path}?${apiParams(params)}`;
-  const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0", Referer: "https://www.zaimanhua.com/", Platform: "pc" },
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = await res.json<{ errno: number; errmsg: string; data: T }>();
-  if (json.errno !== 0) throw new Error(json.errmsg || "API error");
-  return json.data;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          Referer: "https://www.zaimanhua.com/",
+          "Accept": "application/json, text/plain, */*",
+          "Accept-Language": "zh-CN,zh;q=0.9",
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      let json: { errno: number; errmsg: string; data: T };
+      try { json = JSON.parse(text); } catch { throw new Error("Invalid JSON response"); }
+      if (json.errno !== 0) throw new Error(json.errmsg || "API error");
+      return json.data;
+    } catch (e: any) {
+      if (attempt === retries) throw e;
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+    }
+  }
+  throw new Error("API request failed after retries");
 }
 
 export class ZaiManhuaSource implements SiteSource {
@@ -134,7 +150,7 @@ export class ZaiManhuaSource implements SiteSource {
     _comicId: string,
     chapter: { id: string; url: string; title: string },
   ): Promise<string[]> {
-    // Need numeric comic_id — extract from chapter.url
+    // Need numeric comic_id - extract from chapter.url
     let numericId = "";
     try {
       const u = new URL(chapter.url);
