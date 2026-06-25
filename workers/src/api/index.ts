@@ -454,6 +454,26 @@ const proxyImageUrls = (urls: string[]): string[] => urls.map(url => {
   return url;
 });
 
+
+// ========== DEBUG connectivity ==========
+api.get("/debug/connectivity", async (c) => {
+  const targets = [
+    "https://www.zaimanhua.com",
+    "https://v4api.zaimanhua.com",
+    "https://manhua.zaimanhua.com",
+  ];
+  const results: Record<string, string> = {};
+  for (const url of targets) {
+    try {
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(8000) });
+      results[url] = "HTTP " + r.status;
+    } catch (e: any) {
+      results[url] = "ERROR: " + (e?.message || e);
+    }
+  }
+  return c.json(results);
+});
+
 // ========== Chapter images ==========
 
 api.get("/comics/:site/:comicId/:chapterId", async (c) => {
