@@ -4,88 +4,83 @@ function unpackChapterImages(body: string, siteKey: string, page: number): strin
   const payloadEnd = body.lastIndexOf("))");
   if (payloadEnd < 0 || payloadEnd <= payloadStart) { console.log("[" + siteKey + "] Page " + page + ": no )) found"); return []; }
   const payload = body.substring(payloadStart + 2, payloadEnd).trim();
+  
+  // Find keys: last ",'" followed by pipe-delimited keys, then optional .split(...)
   const keyQuoteStart = payload.lastIndexOf(",'");
   if (keyQuoteStart < 0) { console.log("[" + siteKey + "] Page " + page + ": no keys found"); return []; }
-  const keysStr = payload.substring(keyQuoteStart + 2).replace(/^'/, "").replace(/'$/, "");
+  let keysStr = payload.substring(keyQuoteStart + 2).replace(/^'/, "").replace(/\.split\([^)]*\).*$/, "").replace(/'$/, "").trim();
   const beforeKeys = payload.substring(0, keyQuoteStart);
   const parts = beforeKeys.split(",");
   if (parts.length < 3) { console.log("[" + siteKey + "] Page " + page + ": cannot parse radix/count"); return []; }
+  
   const radix = parseInt(parts[parts.length - 2]);
   const count = parseInt(parts[parts.length - 1]);
+  if (isNaN(radix) || isNaN(count)) { console.log("[" + siteKey + "] Page " + page + ": invalid radix/count"); return []; }
+  
   const packedWithQuote = parts.slice(0, parts.length - 2).join(",");
   const packed = packedWithQuote.replace(/^'/, "").replace(/'$/, "");
   const keys = keysStr.split("|");
-  if (isNaN(radix) || isNaN(count) || keys.length === 0) { console.log("[" + siteKey + "] Page " + page + ": invalid radix/count/keys"); return []; }
-
-  // Must use function declaration (not const arrow) for recursion
-  function decode(c: number): string {
-    if (c < radix) return "";
-    const s = decode(Math.floor(c / radix));
-    c = c % radix;
-    return s + (c > 35 ? String.fromCharCode(c + 29) : c.toString(36));
+  
+  // Packer's encode function (maps index to encoded token string)
+  function encodeDigit(c: number): string {
+    return c > 35 ? String.fromCharCode(c + 29) : c.toString(36);
   }
-
+  function encode(c: number): string {
+    if (c < radix) return encodeDigit(c);
+    return encode(Math.floor(c / radix)) + encodeDigit(c % radix);
+  }
+  
+  // Build dictionary: encoded token -> original word
   const dict: Record<string, string> = {};
   for (let i = 0; i < count; i++) {
-    const encoded = decode(i);
+    const encoded = encode(i);
     if (encoded) dict[encoded] = keys[i] || encoded;
   }
-
+  
+  // Replace tokens with word boundaries to avoid corrupting already-replaced values
   let unpacked = packed;
   const sortedTokens = Object.keys(dict).sort((a, b) => b.length - a.length);
   for (const token of sortedTokens) {
     const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    unpacked = unpacked.replace(new RegExp(escaped, "g"), dict[token]);
+    unpacked = unpacked.replace(new RegExp("\\b" + escaped + "\\b", "g"), dict[token]);
   }
-
-  console.log("[" + siteKey + "] Page " + page + ": unpacked code: " + unpacked.substring(0, 200));
-
+  
+  console.log("[" + siteKey + "] Page " + page + ": unpacked " + unpacked.length + " chars");
+  
+  // Extract image URLs: pix + pvalue[] + query suffix pattern
   const pixMatch = unpacked.match(/pix\s*=\s*"([^"]+)"/);
   const pathsMatch = unpacked.match(/pvalue\s*=\s*\[([^\]]+)\]/);
-
-  if (urls.length === 0) {
-    console.error("[" + siteKey + "] unpacked OK but no URLs extracted. pixMatch=" + !!pixMatch + " pathsMatch=" + !!pathsMatch + " unpacked=" + unpacked.substring(0, 300));
-  }  if (pixMatch && pathsMatch) {
+  
+  if (pixMatch && pathsMatch) {
     const pix = pixMatch[1];
     const pathStrs = pathsMatch[1].match(/"([^"]+)"/g);
     if (pathStrs) {
+      // Extract query suffix from the for-loop: +'?cid=...&uk='
+      const suffixMatch = unpacked.match(/\+\\?'\?([^']*)'/);
+      const qs = suffixMatch ? suffixMatch[1].replace(/\\$/, "") : "";
+      
       const urls: string[] = [];
       for (const ps of pathStrs) {
         const path = ps.replace(/"/g, "");
-        const escapedPath = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const suffixRe = new RegExp(escapedPath + "\\+['\"]([^'\"]*)['\"]");
-        const suffixMatch = unpacked.match(suffixRe);
-        urls.push(pix + path + (suffixMatch ? suffixMatch[1] : ""));
+        urls.push(pix + path + (qs ? "?" + qs : ""));
       }
+      console.log("[" + siteKey + "] Page " + page + ": extracted " + urls.length + " URLs");
       return urls;
     }
   }
-
+  
+  // Fallback: find any full image URLs
   const imgRegex = /https?:\/\/[^"'\s]+\.(?:jpg|png|webp|jpeg|gif)[^"'\s]*/gi;
   const rawUrls: string[] = [];
   let m: RegExpExecArray | null;
   while ((m = imgRegex.exec(unpacked)) !== null) {
     rawUrls.push(m[0]);
   }
+  console.log("[" + siteKey + "] Page " + page + ": regex fallback found " + rawUrls.length + " URLs");
   return rawUrls;
 }
 
 
-// yymanhua.com / xmanhua.com (mangabz 系列)
-// Manga detail: /<id>yy/ or /<id>xm/; Chapter: /m<id>/
-// Chapter list: /template-<mid>-s2/; Image API: chapterimage.ashx
-import type { SiteSource, SearchResult, ComicDetail, ResolvedURL, ChapterItem } from "../types";
-import { fetchHTML, parseHTML, absolutizeURL, cleanText } from "../utils/http";
-import { t2s, t2sDeep } from "../utils/zhconv";
-
-interface MangabzConfig {
-  key: string;
-  displayName: string;
-  tags: string[];
-  base: string;             // "http://www.yymanhua.com" or "https://www.xmanhua.com"
-  altBase: string;          // bare domain
-  suffix: string;           // "yy" or "xm"
-}
 
 function makeMangabzSource(cfg: MangabzConfig): SiteSource {
   const { key, displayName, tags, base, altBase, suffix } = cfg;
