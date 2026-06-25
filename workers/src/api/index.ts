@@ -50,6 +50,10 @@ interface AdminUserInput {
   password: string;
 }
 
+interface AdminResetPasswordInput {
+  password: string;
+}
+
 interface ProgressInput {
   chapterIndex: number;
   chapterId: string;
@@ -143,7 +147,7 @@ api.post("/admin/users", authMiddleware, adminMiddleware, async (c) => {
 
 api.delete("/admin/users/:id", authMiddleware, adminMiddleware, async (c) => {
   const d = DB(c);
-  const id = parseInt(c.req.param("id"));
+  const id = parseInt(c.req.param("id")!);
   if (id === 1) return c.json({ error: "不能删除管理员" }, 400);
   await db.deleteUser(d, id);
   return c.json({ ok: true });
@@ -151,106 +155,288 @@ api.delete("/admin/users/:id", authMiddleware, adminMiddleware, async (c) => {
 
 api.put("/admin/users/:id/reset-password", authMiddleware, adminMiddleware, async (c) => {
   const d = DB(c);
-  const id = parseInt(c.req.param("id"));
-  const { password } = await c.req.json();
+  const id = parseInt(c.req.param("id")!);
+  const { password } = await c.req.json<AdminResetPasswordInput>();
   if (!password || password.length < 6) return c.json({ error: "密码至少6个字符" }, 400);
   const hash = await hashPassword(password);
   await db.updateUserPassword(d, id, hash);
   return c.json({ ok: true });
 });
 
-// ========== Sources ==========
-api.get("/sources", (c) => {
+// ========== Rate limiting for public endpoints ==========
+api.use("/auth/login", rateLimit(10));
+api.use("/auth/change-password", rateLimit(10));
+api.use("/sources", rateLimit());
+api.use("/homepage", rateLimit());
+api.use("/search", rateLimit());
+
+// ========== Source list ==========
+api.get("/sources", async (c) => {
   return c.json({ sources: getRegistry().getSearchableSources() });
 });
 
-// ========== Homepage / Category ==========
-api.get("/homepage", async (c) => {
-  const tag = c.req.query("tag") || "";
-  const cacheKey = tag ? "homepage:" + tag : "homepage";
-  const cached = await getCache<{ books: SearchResult[] }>(c, cacheKey);
-  if (cached?.books?.length) return c.json(cached);
+// ========== Image proxy (for HTTP-only sources like yymanhua) ==========
+api.get("/proxy-image", async (c) => {
+  const url = c.req.query("url");
+  if (!url) return c.json({ error: "缺少url参数" }, 400);
+
+  // Only allow proxying from known domains
+  const allowed = ["cover.yymanhua.com", "image.yymanhua.com", "cover.xmanhua.com", "image.xmanhua.com"];
   try {
-    const books = await getRegistry().getCategoryBooks(tag);
-    if (c.env.CACHE) await c.env.CACHE.put(cacheKey, JSON.stringify({ books }), { expirationTtl: 1800 });
-    return c.json({ books });
-  } catch (e: any) {
-    console.error("Homepage fetch failed:", e?.message || e);
-    return c.json({ books: [], error: e?.message || "加载失败" });
+    const target = new URL(url);
+    if (!allowed.some(d => target.hostname === d)) {
+      return c.json({ error: "不允许的域名" }, 403);
+    }
+  } catch {
+    return c.json({ error: "无效URL" }, 400);
+  }
+
+  try {
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0", Referer: "https://yymanhua.com/" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) return c.json({ error: "图片获取失败" }, 502);
+    const buf = await resp.arrayBuffer();
+    const ct = resp.headers.get("content-type") || "image/jpeg";
+    return new Response(buf, {
+      headers: {
+        "Content-Type": ct,
+        "Cache-Control": "public, max-age=86400",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch {
+    return c.json({ error: "图片代理失败" }, 502);
   }
 });
+
+// ========== Homepage ==========
+api.get("/homepage", async (c) => {
+  const tag = c.req.query("tag") || "";
+  // KV cache so repeated chip taps don't hammer source sites
+  const cacheKey = `v2:homepage:${tag || "_top"}`;
+  const cachedHome = await getCache<any>(c, cacheKey);
+  if (cachedHome) return c.json(cachedHome);
+  try {
+    const books = tag
+      ? await getRegistry().getCategoryBooks(tag)
+      : await getRegistry().getHomepageBooks();
+    const resp = { books, tag };
+    if (c.env.CACHE && books.length > 0) {
+      c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify(resp), { expirationTtl: 1800 }));
+    }
+    return c.json(resp);
+  } catch {
+    console.error("Homepage fetch failed"); return c.json({ error: "服务暂时不可用" }, 502);
+  }
+});
+
+const cacheLocks = new Map<string, Promise<void>>();
+function withCacheLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = cacheLocks.get(key);
+  if (existing) {
+    return existing.then(() => fn());
+  }
+  const p = fn().finally(() => cacheLocks.delete(key));
+  cacheLocks.set(key, p as unknown as Promise<void>);
+  return p;
+}
+
+async function resolveURLAsSearch(c: { env: Bindings }, registry: SiteRegistry, keyword: string) {
+  if (!keyword.startsWith('http://') && !keyword.startsWith('https://')) return null;
+  try {
+    new URL(keyword);
+    const resolved = registry.resolveURL(keyword);
+    if (resolved) {
+      const detail = await registry.getComicDetail(resolved.siteKey, resolved.comicId);
+      return { urlSearch: true, item: { key: `${resolved.siteKey}|${resolved.comicId}`, site: resolved.siteKey, comicId: resolved.comicId, title: detail.title, author: detail.author, description: detail.description, coverUrl: detail.coverUrl, url: detail.sourceUrl } };
+    }
+  } catch {}
+  return null;
+}
 
 // ========== Search ==========
 api.post("/search", async (c) => {
-  const { keyword, sites } = await c.req.json<{ keyword: string; sites?: string[] }>();
-  if (!keyword || !keyword.trim()) return c.json({ results: [] });
-  const kw = keyword.trim();
+  const { keyword, sites } = await c.req.json();
+  if (!keyword?.trim()) return c.json({ error: "关键词不能为空" }, 400);
 
-  // URL detection
-  try { new URL(kw); } catch {}
+  const cacheKey = `v2:comic-search:${keyword.trim().toLowerCase()}`;
+  const cachedSearch = await getCache<any>(c, cacheKey);
+  if (cachedSearch) return c.json(cachedSearch);
+
   const registry = getRegistry();
-  const resolved = registry.resolveURL(kw);
-  if (resolved) {
-    try {
-      const detail = await registry.getComicDetail(resolved.siteKey, resolved.comicId);
-      return c.json({ urlSearch: true, item: { site: resolved.siteKey, comicId: resolved.comicId, title: detail.title, author: detail.author, description: detail.description, coverUrl: detail.coverUrl, url: kw, latestChapter: "", status: detail.status, categories: detail.categories } });
-    } catch (e: any) { return c.json({ error: e?.message || "链接解析失败" }, 502); }
-  }
-
-  const cacheKey = "search:" + kw.toLowerCase();
-  const cached = await getCache<{ results: SearchResult[] }>(c, cacheKey);
-  if (cached?.results?.length) return c.json(cached);
-
-  try {
-    const results = await registry.searchAll(sites || [], kw, 30);
-    if (c.env.CACHE) await c.env.CACHE.put(cacheKey, JSON.stringify({ results }), { expirationTtl: 300 });
-    return c.json({ results });
-  } catch (e: any) {
-    console.error("Search failed:", e?.message || e);
-    return c.json({ results: [], error: e?.message || "搜索失败" });
-  }
+  const urlResult = await resolveURLAsSearch(c, registry, keyword);
+  if (urlResult) return c.json(urlResult);
+  const { results } = await withCacheLock(cacheKey, async () => {
+    const recheck = await getCache<any>(c, cacheKey);
+    if (recheck) return recheck;
+    const results = await registry.searchAll(sites || [], keyword.trim(), 50);
+    if (c.env.CACHE) c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify({ results }), { expirationTtl: 300 }));
+    return { results };
+  });
+  return c.json({ results });
 });
 
+// ========== Search (SSE streaming) ==========
 api.post("/search/stream", async (c) => {
-  const { keyword, sites } = await c.req.json<{ keyword: string; sites?: string[] }>();
-  if (!keyword || !keyword.trim()) return c.json({ results: [] });
-  const kw = keyword.trim();
+  const { keyword, sites } = await c.req.json();
+  if (!keyword?.trim()) return c.json({ error: "关键词不能为空" }, 400);
+
   const registry = getRegistry();
-  const targetSources = (sites || []).length > 0
-    ? sites!.map(k => registry.getSource(k)).filter(Boolean)
-    : registry.getSearchableSources().map(m => registry.getSource(m.key)).filter(Boolean);
+  const kw = keyword.trim();
+
+  const urlResult = await resolveURLAsSearch(c, registry, kw);
+  if (urlResult) return c.json(urlResult);
+
+  const targetSources: string[] = (sites && sites.length > 0)
+    ? sites.filter((k: string) => registry.getSource(k))
+    : registry.getSearchableSources().map(s => s.key);
+
+  // KV cache: replay aggregated results immediately, grouped by site to keep onResult(site, items) semantics.
+  const cacheKey = `v2:comic-search:${kw.toLowerCase()}`;
+  const cached = await getCache<{ results: SearchResult[] }>(c, cacheKey);
 
   return streamSSE(c, async (stream) => {
-    const promises = targetSources.map(async (source) => {
+    const aborted = () => c.req.raw.signal.aborted;
+    if (aborted()) return;
+
+    if (cached?.results?.length) {
+      const bySite = new Map<string, SearchResult[]>();
+      for (const it of cached.results) {
+        const arr = bySite.get(it.site) || [];
+        arr.push(it);
+        bySite.set(it.site, arr);
+      }
+      for (const [site, items] of bySite) {
+        if (aborted()) return;
+        try { await stream.writeSSE({ data: JSON.stringify({ site, results: items }) }); } catch { return; }
+      }
+      try { await stream.writeSSE({ data: JSON.stringify({ done: true }) }); } catch {}
+      return;
+    }
+
+    const aggregated: SearchResult[] = [];
+    const pending = targetSources.map(async (siteKey: string) => {
       try {
-        const items = await source!.search(kw, 10);
-        await stream.writeSSE({ data: JSON.stringify({ site: source!.key, results: items }) });
-      } catch (e: any) {
-        await stream.writeSSE({ data: JSON.stringify({ site: source!.key, error: e?.message || "失败" }) });
+        const items = await registry.getSource(siteKey)!.search(kw, 10);
+        for (const item of items) {
+          if (aborted()) return;
+          aggregated.push({ ...item, site: siteKey });
+          try { await stream.writeSSE({ data: JSON.stringify({ site: siteKey, results: [item] }) }); } catch { return; }
+        }
+      } catch (e) {
+        console.error(e);
+        try { await stream.writeSSE({ data: JSON.stringify({ site: siteKey, error: "搜索失败" }) }); } catch {}
       }
     });
-    await Promise.all(promises);
-    await stream.writeSSE({ data: JSON.stringify({ done: true }) });
+    await Promise.all(pending);
+    if (aborted()) return;
+    try { await stream.writeSSE({ data: JSON.stringify({ done: true }) }); } catch {}
+    if (c.env.CACHE && aggregated.length) {
+      c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify({ results: aggregated }), { expirationTtl: 300 }));
+    }
   });
 });
 
 // ========== Comic detail ==========
 api.get("/comics/:site/:comicId", async (c) => {
   const { site, comicId } = c.req.param();
-  const cacheKey = "comic:" + site + ":" + comicId;
+  const cacheKey = `v5:comic:${site}:${comicId}`;
   const cached = await getCache<any>(c, cacheKey);
   if (cached) return c.json(cached);
   try {
     const detail = await getRegistry().getComicDetail(site, comicId);
-    if (c.env.CACHE) await c.env.CACHE.put(cacheKey, JSON.stringify(detail), { expirationTtl: 600 });
+    if (c.env.CACHE) { c.executionCtx?.waitUntil(c.env.CACHE.put(cacheKey, JSON.stringify(detail), { expirationTtl: 600 })); }
     return c.json(detail);
+  } catch { console.error("Comic detail fetch failed"); return c.json({ error: "服务暂时不可用" }, 502); }
+});
+
+// ========== DEBUG chapterimage ==========
+
+api.get("/debug/chapterimage", async (c) => {
+  const site = c.req.query("site") || "yymanhua";
+  const chapterUrl = c.req.query("url") || "";
+  const altBase = site === "yymanhua" ? "http://yymanhua.com" : "https://xmanhua.com";
+  try {
+    const html = await fetch(chapterUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        Referer: altBase + "/",
+      },
+      signal: AbortSignal.timeout(15000),
+    }).then(r => r.text()).catch(e => "FETCH_ERROR: " + (e?.message || e));
+
+    const extractVar = (name: string): string => {
+      const re = new RegExp("(?:var|let|const)\\s+" + name + "\\s*=\\s*\"([^\"]*)\"");
+      const m = (typeof html === "string" ? html : "").match(re);
+      return m ? m[1] : "";
+    };
+    const extractNum = (name: string): number => {
+      const re = new RegExp("(?:var|let|const)\\s+" + name + "\\s*=\\s*(\\d+)");
+      const m = (typeof html === "string" ? html : "").match(re);
+      return m ? parseInt(m[1]) : 0;
+    };
+    const cid = extractNum("YYMANHUA_CID") || extractNum("MANGABZ_CID") || extractNum("MH_CID");
+    const mid = extractNum("YYMANHUA_MID") || extractNum("MANGABZ_MID") || extractNum("MH_MID");
+    const sign = extractVar("YYMANHUA_VIEWSIGN");
+    const signDt = extractVar("YYMANHUA_VIEWSIGN_DT");
+    const imageCount = extractNum("YYMANHUA_IMAGE_COUNT");
+
+    let ashxBody = "";
+    let ashxStatus = 0;
+    if (sign && imageCount > 0 && cid > 0) {
+      const params = new URLSearchParams({ cid: String(cid), page: "1", key: "", _cid: String(cid), _mid: String(mid), _dt: signDt, _sign: sign });
+      try {
+        const r = await fetch(altBase + "/chapterimage.ashx?" + params.toString(), {
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", Referer: chapterUrl, "X-Requested-With": "XMLHttpRequest" },
+          signal: AbortSignal.timeout(10000),
+        });
+        ashxStatus = r.status;
+        ashxBody = await r.text();
+      } catch (e: any) { ashxBody = "FETCH_ERROR: " + (e?.message || e); }
+    }
+
+    return c.json({
+      chapterUrl, altBase,
+      htmlLen: typeof html === "string" ? html.length : 0,
+      htmlHead: typeof html === "string" ? html.substring(0, 800) : html,
+      vars: { cid, mid, sign: sign ? sign.substring(0, 20) + "..." : "", signDt, imageCount },
+      ashxStatus,
+      ashxBodyLen: ashxBody.length,
+      ashxBodyHead: ashxBody.substring(0, 500),
+      ashxBodyTail: ashxBody.length > 500 ? ashxBody.substring(ashxBody.length - 300) : "",
+
+      // Test manual unpacking
+      unpackedPreview: (() => {
+        try {
+          const m = ashxBody.match(/\x27([^\x27]*)\x27,(\d+),(\d+),\x27([^\x27]*)\x27\)\)?;?\s*$/s);
+          if (!m) return "NO MATCH";
+          const [, pkd, rad, cnt, kys] = m;
+          const radix = parseInt(rad);
+          const keys = kys.split("|");
+          const decode = (c: number): string => {
+            if (c < radix) return "";
+            return decode(Math.floor(c / radix)) + (c % radix > 35 ? String.fromCharCode(c % radix + 29) : (c % radix).toString(36));
+          };
+          const dict: Record<string,string> = {};
+          for (let i = 0; i < parseInt(cnt); i++) { const enc = decode(i); if (enc) dict[enc] = keys[i] || enc; }
+          let upk = pkd;
+          const toks = Object.keys(dict).sort((a,b) => b.length - a.length);
+          for (const t of toks) upk = upk.replace(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"), dict[t]);
+          return upk.substring(0, 500);
+        } catch (e: any) { return "ERROR: " + (e?.message || e); }
+      })(),
+    });
   } catch (e: any) {
-    console.error("Comic detail fetch failed:", e?.message || e);
-    return c.json({ error: "服务暂时不可用" }, 502);
+    return c.json({ error: e?.message || String(e) }, 500);
   }
 });
 
 // ========== Chapter images ==========
+
 api.get("/comics/:site/:comicId/:chapterId", async (c) => {
   const { site, comicId, chapterId } = c.req.param();
   try {
@@ -259,6 +445,7 @@ api.get("/comics/:site/:comicId/:chapterId", async (c) => {
       url: c.req.query("url") || "",
       title: c.req.query("title") || "",
     });
+
     return c.json({
       id: chapterId,
       title: c.req.query("title") || "",
@@ -279,6 +466,7 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
       url: c.req.query("url") || "",
       title: c.req.query("title") || "",
     });
+
     const encoder = new TextEncoder();
     let skipped = 0;
     const signal = c.req.raw.signal;
@@ -309,6 +497,7 @@ api.get("/comics/:site/:comicId/:chapterId/stream", async (c) => {
         controller.close();
       },
     });
+
     return new Response(stream, {
       headers: {
         "Content-Type": "application/octet-stream",
@@ -372,32 +561,18 @@ api.put("/progress/:site/:comicId", authMiddleware, async (c) => {
   const { site, comicId } = c.req.param();
   const { chapterIndex, chapterId, chapterTitle, title, author, coverUrl } = await c.req.json<ProgressInput>();
   const result = await d.prepare(
-    "UPDATE bookshelf SET chapter_index = ?, chapter_id = ?, chapter_title = ?, updated_at = datetime('now') WHERE user_id = ? AND site = ? AND comic_id = ?"
+    `UPDATE bookshelf SET chapter_index = ?, chapter_id = ?, chapter_title = ?, updated_at = datetime('now')
+     WHERE user_id = ? AND site = ? AND comic_id = ?`
   ).bind(chapterIndex, chapterId, chapterTitle, u.userId, site, comicId).run();
   if (result.meta.changes === 0) {
     await d.prepare(
-      "INSERT INTO bookshelf (user_id, site, comic_id, title, author, cover_url, chapter_index, chapter_id, chapter_title) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, site, comic_id) DO UPDATE SET chapter_index = excluded.chapter_index, chapter_id = excluded.chapter_id, chapter_title = excluded.chapter_title, updated_at = datetime('now')"
+      `INSERT INTO bookshelf (user_id, site, comic_id, title, author, cover_url, chapter_index, chapter_id, chapter_title)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, site, comic_id) DO UPDATE SET
+         chapter_index = excluded.chapter_index, chapter_id = excluded.chapter_id,
+         chapter_title = excluded.chapter_title, updated_at = datetime('now')`
     ).bind(u.userId, site, comicId, title || "", author || "", coverUrl || "", chapterIndex, chapterId, chapterTitle).run();
   }
   return c.json({ ok: true });
 });
-
-// ========== Proxy image ==========
-api.get("/proxy-image", async (c) => {
-  const url = c.req.query("url");
-  if (!url) return c.json({ error: "url required" }, 400);
-  try {
-    const resp = await fetch(url, { headers: { Referer: new URL(url).origin }, signal: AbortSignal.timeout(10000) });
-    if (!resp.ok) return c.json({ error: "image fetch failed" }, 502);
-    return new Response(resp.body, {
-      headers: {
-        "Content-Type": resp.headers.get("content-type") || "image/jpeg",
-        "Cache-Control": "public, max-age=86400",
-      },
-    });
-  } catch (e: any) {
-    return c.json({ error: e?.message || "proxy failed" }, 502);
-  }
-});
-
 export default api;
